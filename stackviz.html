@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Python Stack Trace Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        button {
+            background-color: #4a5568;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #2d3748;
+        }
+        #mermaidOutput {
+            margin-top: 20px;
+        }
+        .error {
+            color: #e53e3e;
+            margin-top: 10px;
+        }
+        #debugOutput {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8f8f8;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            display: none;
+        }
+        .legend {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8f8f8;
+            border-radius: 4px;
+        }
+        .legend-item {
+            display: inline-block;
+            margin-right: 15px;
+            margin-bottom: 5px;
+        }
+        .legend-color {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-right: 5px;
+            vertical-align: middle;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Python Stack Trace Visualizer</h1>
+        <p>Paste your Python stack trace below to generate a visualization:</p>
+        <textarea id="stackInput" placeholder="Paste your Python stack trace here..."></textarea>
+        <button onclick="generateDiagram()">Generate Diagram</button>
+        <div id="error" class="error"></div>
+        <div id="mermaidOutput"></div>
+        <div id="legend" class="legend"></div>
+        <div id="debugOutput"></div>
+    </div>
+
+    <script>
+        mermaid.initialize({ 
+            startOnLoad: true,
+            theme: 'default',
+            flowchart: {
+                curve: 'basis'
+            },
+            securityLevel: 'loose'
+        });
+
+        function escapeQuotes(str) {
+            return str.replace(/"/g, '&quot;');
+        }
+
+        function cleanFunctionName(name) {
+            return name.replace(/<[^>]+>/g, '').trim();
+        }
+
+        function isStandardLibrary(filepath) {
+            return filepath.includes('/python3.') && filepath.includes('/lib/') ||
+                   filepath.includes('/usr/lib/python');
+        }
+
+        function getColorForPath(filepath) {
+            const appPath = '/app/follow/';
+            const colors = {
+                '/usr/lib/python': '#B8E994',          // Light green for std lib
+                [appPath + 'processing/']: '#F8C291',   // Light orange for processing
+                [appPath + 'config/']: '#82CCDD',       // Light blue for config
+                'default': '#F1F1F1'                    // Light gray for others
+            };
+            
+            for (const [path, color] of Object.entries(colors)) {
+                if (filepath.startsWith(path)) {
+                    return color;
+                }
+            }
+            return colors.default;
+        }
+
+        function parseStackTrace(stackTrace) {
+            const lines = stackTrace.trim().split('\n');
+            const frames = [];
+            
+            let currentFrame = {};
+            
+            for (const line of lines) {
+                const trimmedLine = line.trim();
+                
+                if (trimmedLine.startsWith('Traceback')) continue;
+                
+                if (trimmedLine.startsWith('File "') || trimmedLine.startsWith("File '")) {
+                    if (currentFrame.file) {
+                        frames.push({...currentFrame});
+                        currentFrame = {};
+                    }
+                    
+                    const fileMatch = trimmedLine.match(/File ["'](.+?)["'], line (\d+), in (.+)/);
+                    if (fileMatch) {
+                        currentFrame.file = fileMatch[1];
+                        currentFrame.line = fileMatch[2];
+                        currentFrame.function = cleanFunctionName(fileMatch[3]);
+                        currentFrame.isStdLib = isStandardLibrary(fileMatch[1]);
+                        currentFrame.color = getColorForPath(fileMatch[1]);
+                    }
+                }
+                else if (!trimmedLine.startsWith('File') && frames.length > 0 && trimmedLine !== '') {
+                    if (trimmedLine.includes(':')) {
+                        const [errorType, ...messageParts] = trimmedLine.split(':');
+                        currentFrame.error = `${errorType}:${messageParts.join(':')}`;
+                    } else {
+                        currentFrame.error = trimmedLine;
+                    }
+                }
+            }
+            
+            if (currentFrame.file) {
+                frames.push(currentFrame);
+            }
+            
+            return frames;
+        }
+
+        function generateMermaidDiagram(frames) {
+            let diagram = 'graph TD\n';
+            
+            // Define styles for each unique path prefix
+            const uniquePaths = new Set();
+            frames.forEach(frame => {
+                if (frame.file.startsWith('/app/follow/')) {
+                    const parts = frame.file.split('/');
+                    uniquePaths.add(`/app/follow/${parts[3]}/`);
+                } else if (frame.file.startsWith('/usr/lib/python')) {
+                    uniquePaths.add('/usr/lib/python');
+                }
+            });
+            
+            let classDefCounter = 0;
+            const pathClasses = {};
+            uniquePaths.forEach(path => {
+                const className = `style${classDefCounter++}`;
+                const color = getColorForPath(path);
+                diagram += `classDef ${className} fill:${color},stroke:#666\n`;
+                pathClasses[path] = className;
+            });
+            
+            // Add nodes and connections
+            for (let i = 0; i < frames.length; i++) {
+                const frame = frames[i];
+                const nodeId = `f${i}`;
+                let label = `${escapeQuotes(frame.function)}`;
+                label += `<br/>${escapeQuotes(frame.file)}:${frame.line}`;
+                
+                if (frame.isStdLib) {
+                    label = `S<br/>${label}`;
+                }
+                
+                if (i === frames.length - 1 && frame.error) {
+                    label += `<br/>${escapeQuotes(frame.error)}`;
+                    diagram += `    ${nodeId}["${label}"]:::errorNode\n`;
+                } else {
+                    // Find the matching path class
+                    let className = '';
+                    if (frame.file.startsWith('/app/follow/')) {
+                        const parts = frame.file.split('/');
+                        className = pathClasses[`/app/follow/${parts[3]}/`];
+                    } else if (frame.file.startsWith('/usr/lib/python')) {
+                        className = pathClasses['/usr/lib/python'];
+                    }
+                    
+                    diagram += `    ${nodeId}["${label}"]${className ? ':::' + className : ''}\n`;
+                }
+                
+                if (i < frames.length - 1) {
+                    diagram += `    ${nodeId} --> f${i + 1}\n`;
+                }
+            }
+            
+            diagram += 'classDef errorNode fill:#ff6b6b,stroke:#ff0000,stroke-width:2px\n';
+            
+            return diagram;
+        }
+
+        function updateLegend(frames) {
+            const legend = document.getElementById('legend');
+            const uniquePaths = new Map();
+            
+            frames.forEach(frame => {
+                let path;
+                if (frame.file.startsWith('/app/follow/')) {
+                    const parts = frame.file.split('/');
+                    path = `/app/follow/${parts[3]}/`;
+                } else if (frame.file.startsWith('/usr/lib/python')) {
+                    path = '/usr/lib/python';
+                } else {
+                    path = 'Other';
+                }
+                
+                if (!uniquePaths.has(path)) {
+                    uniquePaths.set(path, {
+                        color: frame.color,
+                        isStdLib: frame.isStdLib
+                    });
+                }
+            });
+            
+            let legendHtml = '<strong>Legend:</strong><br/>';
+            uniquePaths.forEach((info, path) => {
+                legendHtml += `
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: ${info.color}"></span>
+                        ${path}${info.isStdLib ? ' (S)' : ''}
+                    </div>`;
+            });
+            
+            legend.innerHTML = legendHtml;
+        }
+
+        function generateDiagram() {
+            const stackTrace = document.getElementById('stackInput').value;
+            const errorDiv = document.getElementById('error');
+            const outputDiv = document.getElementById('mermaidOutput');
+            const debugDiv = document.getElementById('debugOutput');
+            
+            if (!stackTrace.trim()) {
+                errorDiv.textContent = 'Please paste a stack trace first.';
+                outputDiv.innerHTML = '';
+                debugDiv.innerHTML = '';
+                return;
+            }
+            
+            try {
+                const frames = parseStackTrace(stackTrace);
+                if (frames.length === 0) {
+                    errorDiv.textContent = 'No valid stack frames found in the input.';
+                    outputDiv.innerHTML = '';
+                    debugDiv.innerHTML = '';
+                    return;
+                }
+                
+                const diagram = generateMermaidDiagram(frames);
+                errorDiv.textContent = '';
+                outputDiv.innerHTML = `<pre class="mermaid">${diagram}</pre>`;
+                updateLegend(frames);
+                
+                debugDiv.style.display = 'none';
+                debugDiv.textContent = diagram;
+                
+                mermaid.init(undefined, document.querySelectorAll('.mermaid'));
+            } catch (error) {
+                errorDiv.textContent = 'Error processing stack trace: ' + error.message;
+                outputDiv.innerHTML = '';
+                debugDiv.innerHTML = '';
+            }
+        }
+    </script>
+</body>
+</html>

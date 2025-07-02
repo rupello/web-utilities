@@ -1,0 +1,226 @@
+import React, { useState } from 'react';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+
+const ColorPicker = () => {
+  const [hue, setHue] = useState(0);
+  const [saturation, setSaturation] = useState(100);
+  const [value, setValue] = useState(100);
+  const [selectedNamedColor, setSelectedNamedColor] = useState('red');
+  
+  // Common matplotlib named colors
+  const namedColors = [
+    'red', 'blue', 'green', 'yellow', 'purple', 'orange',
+    'cyan', 'magenta', 'brown', 'pink', 'gray', 'olive',
+    'navy', 'teal', 'maroon', 'lime'
+  ];
+
+  // Convert RGB to HSV
+  const rgbToHsv = (r, g, b) => {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const diff = max - min;
+
+    let h = 0;
+    let s = max === 0 ? 0 : diff / max;
+    let v = max;
+
+    if (diff !== 0) {
+      switch (max) {
+        case r:
+          h = 60 * (((g - b) / diff) % 6);
+          break;
+        case g:
+          h = 60 * ((b - r) / diff + 2);
+          break;
+        case b:
+          h = 60 * ((r - g) / diff + 4);
+          break;
+      }
+    }
+
+    h = h < 0 ? h + 360 : h;
+    
+    return [
+      Math.round(h),
+      Math.round(s * 100),
+      Math.round(v * 100)
+    ];
+  };
+
+  // Convert HSV to RGB
+  const hsvToRgb = (h, s, v) => {
+    s = s / 100;
+    v = v / 100;
+    const c = v * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = v - c;
+
+    let r, g, b;
+    if (h >= 0 && h < 60) {
+      [r, g, b] = [c, x, 0];
+    } else if (h >= 60 && h < 120) {
+      [r, g, b] = [x, c, 0];
+    } else if (h >= 120 && h < 180) {
+      [r, g, b] = [0, c, x];
+    } else if (h >= 180 && h < 240) {
+      [r, g, b] = [0, x, c];
+    } else if (h >= 240 && h < 300) {
+      [r, g, b] = [x, 0, c];
+    } else {
+      [r, g, b] = [c, 0, x];
+    }
+
+    const rgb = [
+      Math.round((r + m) * 255),
+      Math.round((g + m) * 255),
+      Math.round((b + m) * 255)
+    ];
+
+    return rgb;
+  };
+
+  // Convert RGB to hex
+  const rgbToHex = (r, g, b) => {
+    return '#' + [r, g, b]
+      .map(x => x.toString(16).padStart(2, '0'))
+      .join('');
+  };
+
+  // Get RGB values from a color name using a temporary div
+  const getColorRgb = (colorName) => {
+    const tempDiv = document.createElement('div');
+    tempDiv.style.color = colorName;
+    document.body.appendChild(tempDiv);
+    const color = window.getComputedStyle(tempDiv).color;
+    document.body.removeChild(tempDiv);
+    const rgb = color.match(/\d+/g).map(Number);
+    return rgb;
+  };
+
+  // Handle named color selection
+  const handleNamedColorSelect = (colorName) => {
+    setSelectedNamedColor(colorName);
+    const rgb = getColorRgb(colorName);
+    const [newHue, newSaturation, newValue] = rgbToHsv(...rgb);
+    setHue(newHue);
+    setSaturation(newSaturation);
+    setValue(newValue);
+  };
+
+  const currentRgb = hsvToRgb(hue, saturation, value);
+  const currentHex = rgbToHex(...currentRgb);
+
+  return (
+    <Card className="w-full max-w-xl">
+      <CardHeader>
+        <CardTitle>Matplotlib Color Picker</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-6">
+          {/* HSV Sliders */}
+          <div className="space-y-4">
+            <h3 className="font-semibold">HSV Controls</h3>
+            <div className="space-y-2">
+              <label className="block text-sm">
+                Hue (0-360)
+                <input
+                  type="range"
+                  min="0"
+                  max="360"
+                  value={hue}
+                  onChange={(e) => setHue(Number(e.target.value))}
+                  className="w-full"
+                />
+                <span className="text-sm">{hue}°</span>
+              </label>
+              
+              <label className="block text-sm">
+                Saturation (0-100)
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={saturation}
+                  onChange={(e) => setSaturation(Number(e.target.value))}
+                  className="w-full"
+                />
+                <span className="text-sm">{saturation}%</span>
+              </label>
+              
+              <label className="block text-sm">
+                Value (0-100)
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={value}
+                  onChange={(e) => setValue(Number(e.target.value))}
+                  className="w-full"
+                />
+                <span className="text-sm">{value}%</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Color Preview */}
+          <div className="space-y-2">
+            <h3 className="font-semibold">Current Color</h3>
+            <div className="flex items-center space-x-4">
+              <div
+                className="w-16 h-16 rounded border border-gray-200"
+                style={{ backgroundColor: currentHex }}
+              />
+              <div className="space-y-1">
+                <p className="text-sm">Hex: {currentHex}</p>
+                <p className="text-sm">RGB: rgb({currentRgb.join(', ')})</p>
+                <p className="text-sm">HSV: ({hue}°, {saturation}%, {value}%)</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Named Colors */}
+          <div className="space-y-2">
+            <h3 className="font-semibold">Named Colors</h3>
+            <div className="grid grid-cols-4 gap-2">
+              {namedColors.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => handleNamedColorSelect(color)}
+                  className={`p-2 text-sm rounded border ${
+                    selectedNamedColor === color ? 'border-blue-500' : 'border-gray-200'
+                  }`}
+                >
+                  <div
+                    className="w-full h-6 rounded mb-1"
+                    style={{ backgroundColor: color }}
+                  />
+                  {color}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Selected Named Color Preview */}
+          {selectedNamedColor && (
+            <div className="space-y-2">
+              <h3 className="font-semibold">Selected Named Color</h3>
+              <div className="flex items-center space-x-4">
+                <div
+                  className="w-16 h-16 rounded border border-gray-200"
+                  style={{ backgroundColor: selectedNamedColor }}
+                />
+                <p className="text-sm">Name: '{selectedNamedColor}'</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+export default ColorPicker;

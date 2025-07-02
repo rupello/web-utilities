@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Gantt Chart Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.6.1/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: inline-block;
+            width: 100px;
+        }
+        input, select {
+            padding: 5px;
+            margin: 5px;
+        }
+        button {
+            padding: 8px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #taskList {
+            margin: 20px 0;
+        }
+        .task-item {
+            margin: 5px 0;
+            padding: 5px;
+            background-color: #f5f5f5;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .delete-btn {
+            background-color: #ff4444;
+            margin-left: 10px;
+        }
+        .delete-btn:hover {
+            background-color: #cc0000;
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #333;
+            color: white;
+            padding: 16px 24px;
+            border-radius: 4px;
+            display: none;
+            animation: fadeInOut 2s ease-in-out;
+            z-index: 1000;
+        }
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(20px); }
+            20% { opacity: 1; transform: translateY(0); }
+            80% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-20px); }
+        }
+    </style>
+</head>
+<body>
+    <h1>Gantt Chart Generator</h1>
+    
+    <div class="form-group">
+        <label for="section">Section:</label>
+        <input type="text" id="section" required>
+    </div>
+    
+    <div class="form-group">
+        <label for="taskName">Task Name:</label>
+        <input type="text" id="taskName" required>
+    </div>
+    
+    <div class="form-group">
+        <label for="startDate">Start Date:</label>
+        <input type="date" id="startDate" required>
+    </div>
+    
+    <div class="form-group">
+        <label for="duration">Duration (days):</label>
+        <input type="number" id="duration" min="1" required>
+    </div>
+    
+    <button onclick="addTask()">Add Task</button>
+    <button onclick="exportMermaid()" style="background-color: #2196F3; margin-left: 10px;">Copy Mermaid Code</button>
+    <button onclick="exportCSV()" style="background-color: #9C27B0; margin-left: 10px;">Copy as CSV</button>
+    
+    <div id="taskList"></div>
+    <div id="ganttChart"></div>
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // Initialize mermaid
+        mermaid.initialize({ startOnLoad: true });
+        
+        // Initialize tasks array
+        let tasks = [];
+
+        // Toast notification function
+        function showToast(message, duration = 2000) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.style.display = 'block';
+            
+            // Reset animation
+            toast.style.animation = 'none';
+            toast.offsetHeight; // Trigger reflow
+            toast.style.animation = 'fadeInOut 2s ease-in-out';
+            
+            // Hide toast after animation
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, duration);
+        }
+
+        // Clipboard helper function
+        function copyToClipboard(text, successMessage) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'absolute';
+            textarea.style.left = '-9999px';
+            document.body.appendChild(textarea);
+
+            try {
+                textarea.select();
+                textarea.setSelectionRange(0, 99999);
+                document.execCommand('copy');
+                showToast(`✓ ${successMessage}`);
+            } catch (err) {
+                console.error('Failed to copy:', err);
+                showToast(`❌ Failed to copy ${successMessage.toLowerCase()}`);
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        }
+
+        function addTask() {
+            const section = document.getElementById('section').value;
+            const taskName = document.getElementById('taskName').value;
+            const startDate = document.getElementById('startDate').value;
+            const duration = document.getElementById('duration').value;
+            
+            if (!section || !taskName || !startDate || !duration) {
+                showToast('❌ Please fill in all fields');
+                return;
+            }
+            
+            tasks.push({
+                section,
+                taskName,
+                startDate,
+                duration: parseInt(duration)
+            });
+            
+            updateTaskList();
+            updateGanttChart();
+            
+            // Clear form
+            document.getElementById('section').value = '';
+            document.getElementById('taskName').value = '';
+            document.getElementById('startDate').value = '';
+            document.getElementById('duration').value = '';
+        }
+        
+        function deleteTask(index) {
+            tasks.splice(index, 1);
+            updateTaskList();
+            updateGanttChart();
+        }
+        
+        function updateTaskList() {
+            const taskList = document.getElementById('taskList');
+            taskList.innerHTML = '<h2>Tasks:</h2>';
+            
+            tasks.forEach((task, index) => {
+                const taskItem = document.createElement('div');
+                taskItem.className = 'task-item';
+                taskItem.innerHTML = `
+                    <span>Section: ${task.section} | Task: ${task.taskName} | 
+                    Start: ${task.startDate} | Duration: ${task.duration} days</span>
+                    <button class="delete-btn" onclick="deleteTask(${index})">Delete</button>
+                `;
+                taskList.appendChild(taskItem);
+            });
+        }
+        
+        function generateMermaidSyntax() {
+            const sections = {};
+            tasks.forEach(task => {
+                if (!sections[task.section]) {
+                    sections[task.section] = [];
+                }
+                sections[task.section].push(task);
+            });
+            
+            let mermaidSyntax = 'gantt\n    title Project Timeline\n    dateFormat YYYY-MM-DD\n';
+            
+            Object.entries(sections).forEach(([section, sectionTasks]) => {
+                mermaidSyntax += `    section ${section}\n`;
+                sectionTasks.forEach(task => {
+                    mermaidSyntax += `    ${task.taskName} : ${task.startDate}, ${task.duration}d\n`;
+                });
+            });
+
+            return mermaidSyntax;
+        }
+        
+        function updateGanttChart() {
+            const chartDiv = document.getElementById('ganttChart');
+            chartDiv.innerHTML = '<pre class="mermaid">\n' + generateMermaidSyntax() + '</pre>';
+            mermaid.init(undefined, document.querySelectorAll('.mermaid'));
+        }
+        
+        function exportMermaid() {
+            const mermaidSyntax = generateMermaidSyntax();
+            copyToClipboard(mermaidSyntax, 'Mermaid code copied to clipboard');
+        }
+        
+        function exportCSV() {
+            const csvContent = [
+                ['Section', 'Task Name', 'Start Date', 'Duration (days)'].join(','),
+                ...tasks.map(task => [
+                    `"${task.section}"`,
+                    `"${task.taskName}"`,
+                    task.startDate,
+                    task.duration
+                ].join(','))
+            ].join('\n');
+            
+            copyToClipboard(csvContent, 'CSV copied to clipboard');
+        }
+    </script>
+</body>
+</html>
