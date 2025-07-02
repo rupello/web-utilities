@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Passphrase Generator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.2em;
+            font-weight: 300;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #555;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+            box-sizing: border-box;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .checkbox-group input {
+            width: auto;
+            margin: 0;
+        }
+        
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            margin: 20px 0;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .result {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            margin-top: 20px;
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+        }
+        
+        .passphrase {
+            font-family: 'Courier New', monospace;
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            word-break: break-all;
+            flex: 1;
+        }
+        
+        .copy-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            white-space: nowrap;
+            transition: background-color 0.2s ease;
+        }
+        
+        .copy-btn:hover {
+            background: #218838;
+        }
+        
+        .copy-btn.copied {
+            background: #6c757d;
+        }
+        
+        .hint {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+            font-style: italic;
+        }
+        
+        .passphrase-list {
+            margin-top: 30px;
+        }
+        
+        .passphrase-list h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+            font-weight: 500;
+        }
+        
+        .passphrase-item {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            position: relative;
+            word-break: break-all;
+        }
+        
+        .passphrase-item:hover {
+            background: #e3f2fd;
+            border-color: #667eea;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(102, 126, 234, 0.2);
+        }
+        
+        .passphrase-item.copied {
+            background: #d4edda;
+            border-color: #28a745;
+        }
+        
+        .passphrase-item::after {
+            content: '📋 Click to copy';
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 12px;
+            color: #666;
+            font-family: 'Segoe UI', sans-serif;
+            font-weight: normal;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        
+        .passphrase-item:hover::after {
+            opacity: 1;
+        }
+        
+        .passphrase-item.copied::after {
+            content: '✅ Copied!';
+            color: #28a745;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Passphrase Generator</h1>
+        
+        <div class="form-group">
+            <label for="wordCount">Number of words:</label>
+            <select id="wordCount">
+                <option value="2">2 words</option>
+                <option value="3" selected>3 words</option>
+                <option value="4">4 words</option>
+                <option value="5">5 words</option>
+                <option value="6">6 words</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="separator">Word separator:</label>
+            <input type="text" id="separator" value="!5" placeholder="Enter separator">
+            <div class="hint">Common options: !5, --, @3, #7, $9</div>
+        </div>
+        
+        <div class="form-group">
+            <div class="checkbox-group">
+                <input type="checkbox" id="initialCaps" checked>
+                <label for="initialCaps">Capitalize first letter of each word</label>
+            </div>
+        </div>
+        
+        <button onclick="generatePassphrases()">Generate 10 Passphrases</button>
+        
+        <div class="passphrase-list" id="passphraseList" style="display: none;">
+            <h3>Click any passphrase to copy:</h3>
+            <div id="passphraseItems"></div>
+        </div>
+    </div>
+
+    <script>
+        // Word dictionaries
+        const adjectives = [
+            'happy', 'bright', 'swift', 'calm', 'bold', 'wise', 'kind', 'brave', 'quiet', 'strong',
+            'clever', 'gentle', 'quick', 'eager', 'proud', 'noble', 'wild', 'free', 'warm', 'cool',
+            'sharp', 'smooth', 'rough', 'soft', 'hard', 'light', 'dark', 'loud', 'silent', 'pure',
+            'fresh', 'old', 'new', 'big', 'small', 'tall', 'short', 'wide', 'narrow', 'deep',
+            'shallow', 'fast', 'slow', 'early', 'late', 'near', 'far', 'high', 'low', 'rich'
+        ];
+        
+        const colors = [
+            'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'brown', 'black', 'white',
+            'gray', 'silver', 'gold', 'bronze', 'copper', 'crimson', 'scarlet', 'azure', 'navy', 'teal',
+            'cyan', 'magenta', 'lime', 'olive', 'maroon', 'violet', 'indigo', 'turquoise', 'coral', 'salmon',
+            'amber', 'jade', 'ruby', 'emerald', 'sapphire', 'pearl', 'ivory', 'ebony', 'slate', 'charcoal'
+        ];
+        
+        const animals = [
+            'cat', 'dog', 'bird', 'fish', 'bear', 'wolf', 'fox', 'deer', 'lion', 'tiger',
+            'eagle', 'hawk', 'owl', 'swan', 'duck', 'goose', 'horse', 'cow', 'pig', 'sheep',
+            'goat', 'rabbit', 'mouse', 'rat', 'squirrel', 'beaver', 'otter', 'seal', 'whale', 'dolphin',
+            'shark', 'turtle', 'frog', 'snake', 'lizard', 'spider', 'ant', 'bee', 'butterfly', 'dragonfly',
+            'elephant', 'rhino', 'hippo', 'giraffe', 'zebra', 'monkey', 'gorilla', 'panda', 'koala', 'kangaroo'
+        ];
+        
+        const nouns = [
+            'mountain', 'river', 'ocean', 'forest', 'desert', 'valley', 'hill', 'lake', 'stream', 'pond',
+            'tree', 'flower', 'grass', 'rock', 'stone', 'cloud', 'star', 'moon', 'sun', 'sky',
+            'wind', 'rain', 'snow', 'fire', 'water', 'earth', 'air', 'light', 'shadow', 'thunder',
+            'castle', 'tower', 'bridge', 'gate', 'door', 'window', 'road', 'path', 'trail', 'journey',
+            'dream', 'hope', 'joy', 'peace', 'love', 'trust', 'faith', 'courage', 'wisdom', 'magic'
+        ];
+
+        function getRandomWord(wordArray) {
+            return wordArray[Math.floor(Math.random() * wordArray.length)];
+        }
+
+        function capitalizeWord(word) {
+            return word.charAt(0).toUpperCase() + word.slice(1);
+        }
+
+        function generateSinglePassphrase() {
+            const wordCount = parseInt(document.getElementById('wordCount').value);
+            const separator = document.getElementById('separator').value;
+            const initialCaps = document.getElementById('initialCaps').checked;
+            
+            // Available word arrays
+            const wordArrays = [adjectives, colors, animals, nouns];
+            const words = [];
+            
+            // Generate words from different categories
+            for (let i = 0; i < wordCount; i++) {
+                const wordArray = wordArrays[i % wordArrays.length];
+                let word = getRandomWord(wordArray);
+                
+                if (initialCaps) {
+                    word = capitalizeWord(word);
+                }
+                
+                words.push(word);
+            }
+            
+            // Join words with separator
+            return words.join(separator);
+        }
+
+        function generatePassphrases() {
+            const passphraseList = document.getElementById('passphraseList');
+            const passphraseItems = document.getElementById('passphraseItems');
+            
+            // Clear previous results
+            passphraseItems.innerHTML = '';
+            
+            // Generate 10 passphrases
+            for (let i = 0; i < 10; i++) {
+                const passphrase = generateSinglePassphrase();
+                
+                const item = document.createElement('div');
+                item.className = 'passphrase-item';
+                item.textContent = passphrase;
+                item.onclick = () => copyPassphrase(item, passphrase);
+                
+                passphraseItems.appendChild(item);
+            }
+            
+            // Show the list
+            passphraseList.style.display = 'block';
+        }
+        
+        function copyPassphrase(element, passphrase) {
+            navigator.clipboard.writeText(passphrase).then(() => {
+                // Reset all other items
+                document.querySelectorAll('.passphrase-item').forEach(item => {
+                    item.classList.remove('copied');
+                });
+                
+                // Mark this item as copied
+                element.classList.add('copied');
+                
+                // Reset after 2 seconds
+                setTimeout(() => {
+                    element.classList.remove('copied');
+                }, 2000);
+            }).catch(err => {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = passphrase;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                // Reset all other items
+                document.querySelectorAll('.passphrase-item').forEach(item => {
+                    item.classList.remove('copied');
+                });
+                
+                // Mark this item as copied
+                element.classList.add('copied');
+                
+                // Reset after 2 seconds
+                setTimeout(() => {
+                    element.classList.remove('copied');
+                }, 2000);
+            });
+        }
+        
+        // Generate initial passphrases on page load
+        window.addEventListener('load', generatePassphrases);
+        
+        // Allow Enter key to generate new passphrases
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                generatePassphrases();
+            }
+        });
+    </script>
+</body>
+</html>

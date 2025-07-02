@@ -3,378 +3,252 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Passphrase Generator</title>
+    <title>Web Utilities</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 600px;
-            margin: 40px auto;
-            padding: 20px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            box-sizing: border-box;
-        }
-        
-        .container {
-            background: rgba(255, 255, 255, 0.95);
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            backdrop-filter: blur(10px);
-        }
-        
-        h1 {
-            text-align: center;
             color: #333;
-            margin-bottom: 30px;
-            font-size: 2.2em;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            color: white;
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
             font-weight: 300;
         }
-        
-        .form-group {
-            margin-bottom: 20px;
+
+        .utilities-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
         }
-        
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 500;
-            color: #555;
-        }
-        
-        input, select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e1e5e9;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s ease;
-            box-sizing: border-box;
-        }
-        
-        input:focus, select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .checkbox-group input {
-            width: auto;
-            margin: 0;
-        }
-        
-        button {
-            width: 100%;
-            padding: 15px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 18px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            margin: 20px 0;
-        }
-        
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-        
-        button:active {
-            transform: translateY(0);
-        }
-        
-        .result {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #667eea;
-            margin-top: 20px;
-            min-height: 60px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 15px;
-        }
-        
-        .passphrase {
-            font-family: 'Courier New', monospace;
-            font-size: 18px;
-            font-weight: bold;
-            color: #333;
-            word-break: break-all;
-            flex: 1;
-        }
-        
-        .copy-btn {
-            background: #28a745;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-            white-space: nowrap;
-            transition: background-color 0.2s ease;
-        }
-        
-        .copy-btn:hover {
-            background: #218838;
-        }
-        
-        .copy-btn.copied {
-            background: #6c757d;
-        }
-        
-        .hint {
-            font-size: 14px;
-            color: #666;
-            margin-top: 5px;
-            font-style: italic;
-        }
-        
-        .passphrase-list {
-            margin-top: 30px;
-        }
-        
-        .passphrase-list h3 {
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 1.2em;
-            font-weight: 500;
-        }
-        
-        .passphrase-item {
-            background: #f8f9fa;
-            border: 2px solid #e9ecef;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 10px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-family: 'Courier New', monospace;
-            font-size: 16px;
-            font-weight: bold;
-            color: #333;
+
+        .utility-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+            text-decoration: none;
+            color: inherit;
             position: relative;
-            word-break: break-all;
+            overflow: hidden;
         }
-        
-        .passphrase-item:hover {
-            background: #e3f2fd;
-            border-color: #667eea;
-            transform: translateY(-1px);
-            box-shadow: 0 3px 10px rgba(102, 126, 234, 0.2);
-        }
-        
-        .passphrase-item.copied {
-            background: #d4edda;
-            border-color: #28a745;
-        }
-        
-        .passphrase-item::after {
-            content: '📋 Click to copy';
+
+        .utility-card::before {
+            content: '';
             position: absolute;
-            right: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            font-size: 12px;
-            color: #666;
-            font-family: 'Segoe UI', sans-serif;
-            font-weight: normal;
-            opacity: 0;
-            transition: opacity 0.2s ease;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+            transition: left 0.5s;
         }
-        
-        .passphrase-item:hover::after {
-            opacity: 1;
+
+        .utility-card:hover::before {
+            left: 100%;
         }
-        
-        .passphrase-item.copied::after {
-            content: '✅ Copied!';
-            color: #28a745;
-            opacity: 1;
+
+        .utility-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 16px 40px rgba(0,0,0,0.2);
+        }
+
+        .utility-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem;
+            color: white;
+        }
+
+        .utility-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #2d3748;
+        }
+
+        .utility-description {
+            color: #718096;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+
+        .utility-link {
+            display: inline-flex;
+            align-items: center;
+            color: #667eea;
+            font-weight: 500;
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .utility-link:hover {
+            color: #764ba2;
+        }
+
+        .utility-link::after {
+            content: '→';
+            margin-left: 0.5rem;
+            transition: transform 0.3s ease;
+        }
+
+        .utility-link:hover::after {
+            transform: translateX(4px);
+        }
+
+        .coming-soon {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 2rem;
+            text-align: center;
+            border: 2px dashed rgba(255, 255, 255, 0.3);
+        }
+
+        .coming-soon .utility-icon {
+            background: linear-gradient(135deg, #cbd5e0, #a0aec0);
+            margin: 0 auto 1.5rem auto;
+        }
+
+        .coming-soon .utility-title {
+            color: #a0aec0;
+        }
+
+        .coming-soon .utility-description {
+            color: #a0aec0;
+        }
+
+        footer {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.8);
+            margin-top: 3rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 2rem;
+            }
+
+            .utilities-grid {
+                grid-template-columns: 1fr;
+                gap: 1.5rem;
+            }
+
+            .utility-card {
+                padding: 1.5rem;
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .utility-card {
+            animation: fadeInUp 0.6s ease forwards;
+        }
+
+        .utility-card:nth-child(2) {
+            animation-delay: 0.1s;
+        }
+
+        .utility-card:nth-child(3) {
+            animation-delay: 0.2s;
+        }
+
+        .utility-card:nth-child(4) {
+            animation-delay: 0.3s;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🔐 Passphrase Generator</h1>
-        
-        <div class="form-group">
-            <label for="wordCount">Number of words:</label>
-            <select id="wordCount">
-                <option value="2">2 words</option>
-                <option value="3" selected>3 words</option>
-                <option value="4">4 words</option>
-                <option value="5">5 words</option>
-                <option value="6">6 words</option>
-            </select>
-        </div>
-        
-        <div class="form-group">
-            <label for="separator">Word separator:</label>
-            <input type="text" id="separator" value="!5" placeholder="Enter separator">
-            <div class="hint">Common options: !5, --, @3, #7, $9</div>
-        </div>
-        
-        <div class="form-group">
-            <div class="checkbox-group">
-                <input type="checkbox" id="initialCaps" checked>
-                <label for="initialCaps">Capitalize first letter of each word</label>
+        <header>
+            <h1>Rupe's Toolbox</h1>
+            <p class="subtitle">Simple tools for everyday tasks</p>
+        </header>
+
+        <div class="utilities-grid">
+            <a href="genpass.html" class="utility-card">
+                <div class="utility-icon">🔐</div>
+                <h2 class="utility-title">Password Generator</h2>
+                <p class="utility-description">Generate secure passphrases.</p>
+                <span class="utility-link">Open Tool</span>
+            </a>
+
+            <div class="utility-card coming-soon">
+                <div class="utility-icon">⚙️</div>
+                <h2 class="utility-title">More Tools Coming Soon</h2>
+                <p class="utility-description">Additional utilities will be added here as they're developed.</p>
             </div>
         </div>
-        
-        <button onclick="generatePassphrases()">Generate 10 Passphrases</button>
-        
-        <div class="passphrase-list" id="passphraseList" style="display: none;">
-            <h3>Click any passphrase to copy:</h3>
-            <div id="passphraseItems"></div>
-        </div>
+
+        <footer>
+            <p>Built by rupello</p>
+        </footer>
     </div>
 
     <script>
-        // Word dictionaries
-        const adjectives = [
-            'happy', 'bright', 'swift', 'calm', 'bold', 'wise', 'kind', 'brave', 'quiet', 'strong',
-            'clever', 'gentle', 'quick', 'eager', 'proud', 'noble', 'wild', 'free', 'warm', 'cool',
-            'sharp', 'smooth', 'rough', 'soft', 'hard', 'light', 'dark', 'loud', 'silent', 'pure',
-            'fresh', 'old', 'new', 'big', 'small', 'tall', 'short', 'wide', 'narrow', 'deep',
-            'shallow', 'fast', 'slow', 'early', 'late', 'near', 'far', 'high', 'low', 'rich'
-        ];
-        
-        const colors = [
-            'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'brown', 'black', 'white',
-            'gray', 'silver', 'gold', 'bronze', 'copper', 'crimson', 'scarlet', 'azure', 'navy', 'teal',
-            'cyan', 'magenta', 'lime', 'olive', 'maroon', 'violet', 'indigo', 'turquoise', 'coral', 'salmon',
-            'amber', 'jade', 'ruby', 'emerald', 'sapphire', 'pearl', 'ivory', 'ebony', 'slate', 'charcoal'
-        ];
-        
-        const animals = [
-            'cat', 'dog', 'bird', 'fish', 'bear', 'wolf', 'fox', 'deer', 'lion', 'tiger',
-            'eagle', 'hawk', 'owl', 'swan', 'duck', 'goose', 'horse', 'cow', 'pig', 'sheep',
-            'goat', 'rabbit', 'mouse', 'rat', 'squirrel', 'beaver', 'otter', 'seal', 'whale', 'dolphin',
-            'shark', 'turtle', 'frog', 'snake', 'lizard', 'spider', 'ant', 'bee', 'butterfly', 'dragonfly',
-            'elephant', 'rhino', 'hippo', 'giraffe', 'zebra', 'monkey', 'gorilla', 'panda', 'koala', 'kangaroo'
-        ];
-        
-        const nouns = [
-            'mountain', 'river', 'ocean', 'forest', 'desert', 'valley', 'hill', 'lake', 'stream', 'pond',
-            'tree', 'flower', 'grass', 'rock', 'stone', 'cloud', 'star', 'moon', 'sun', 'sky',
-            'wind', 'rain', 'snow', 'fire', 'water', 'earth', 'air', 'light', 'shadow', 'thunder',
-            'castle', 'tower', 'bridge', 'gate', 'door', 'window', 'road', 'path', 'trail', 'journey',
-            'dream', 'hope', 'joy', 'peace', 'love', 'trust', 'faith', 'courage', 'wisdom', 'magic'
-        ];
-
-        function getRandomWord(wordArray) {
-            return wordArray[Math.floor(Math.random() * wordArray.length)];
-        }
-
-        function capitalizeWord(word) {
-            return word.charAt(0).toUpperCase() + word.slice(1);
-        }
-
-        function generateSinglePassphrase() {
-            const wordCount = parseInt(document.getElementById('wordCount').value);
-            const separator = document.getElementById('separator').value;
-            const initialCaps = document.getElementById('initialCaps').checked;
+        // Add some interactive sparkle
+        document.addEventListener('DOMContentLoaded', function() {
+            const cards = document.querySelectorAll('.utility-card:not(.coming-soon)');
             
-            // Available word arrays
-            const wordArrays = [adjectives, colors, animals, nouns];
-            const words = [];
-            
-            // Generate words from different categories
-            for (let i = 0; i < wordCount; i++) {
-                const wordArray = wordArrays[i % wordArrays.length];
-                let word = getRandomWord(wordArray);
-                
-                if (initialCaps) {
-                    word = capitalizeWord(word);
-                }
-                
-                words.push(word);
-            }
-            
-            // Join words with separator
-            return words.join(separator);
-        }
-
-        function generatePassphrases() {
-            const passphraseList = document.getElementById('passphraseList');
-            const passphraseItems = document.getElementById('passphraseItems');
-            
-            // Clear previous results
-            passphraseItems.innerHTML = '';
-            
-            // Generate 10 passphrases
-            for (let i = 0; i < 10; i++) {
-                const passphrase = generateSinglePassphrase();
-                
-                const item = document.createElement('div');
-                item.className = 'passphrase-item';
-                item.textContent = passphrase;
-                item.onclick = () => copyPassphrase(item, passphrase);
-                
-                passphraseItems.appendChild(item);
-            }
-            
-            // Show the list
-            passphraseList.style.display = 'block';
-        }
-        
-        function copyPassphrase(element, passphrase) {
-            navigator.clipboard.writeText(passphrase).then(() => {
-                // Reset all other items
-                document.querySelectorAll('.passphrase-item').forEach(item => {
-                    item.classList.remove('copied');
+            cards.forEach(card => {
+                card.addEventListener('mouseenter', function() {
+                    this.style.background = 'rgba(255, 255, 255, 0.98)';
                 });
                 
-                // Mark this item as copied
-                element.classList.add('copied');
-                
-                // Reset after 2 seconds
-                setTimeout(() => {
-                    element.classList.remove('copied');
-                }, 2000);
-            }).catch(err => {
-                // Fallback for older browsers
-                const textArea = document.createElement('textarea');
-                textArea.value = passphrase;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
-                
-                // Reset all other items
-                document.querySelectorAll('.passphrase-item').forEach(item => {
-                    item.classList.remove('copied');
+                card.addEventListener('mouseleave', function() {
+                    this.style.background = 'rgba(255, 255, 255, 0.95)';
                 });
-                
-                // Mark this item as copied
-                element.classList.add('copied');
-                
-                // Reset after 2 seconds
-                setTimeout(() => {
-                    element.classList.remove('copied');
-                }, 2000);
             });
-        }
-        
-        // Generate initial passphrases on page load
-        window.addEventListener('load', generatePassphrases);
-        
-        // Allow Enter key to generate new passphrases
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                generatePassphrases();
-            }
         });
     </script>
 </body>
