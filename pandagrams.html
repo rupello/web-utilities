@@ -643,13 +643,28 @@
         function isOneLetterDifferent(word1, word2) {
             if (word1.length !== word2.length) return false;
             
-            let differences = 0;
+            // Count frequency of each letter in both words
+            const freq1 = {};
+            const freq2 = {};
+            
             for (let i = 0; i < word1.length; i++) {
-                if (word1[i] !== word2[i]) {
-                    differences++;
-                }
+                freq1[word1[i]] = (freq1[word1[i]] || 0) + 1;
+                freq2[word2[i]] = (freq2[word2[i]] || 0) + 1;
             }
-            return differences === 1;
+            
+            // Get all unique letters from both words
+            const allLetters = new Set([...Object.keys(freq1), ...Object.keys(freq2)]);
+            
+            let totalDifference = 0;
+            for (const letter of allLetters) {
+                const count1 = freq1[letter] || 0;
+                const count2 = freq2[letter] || 0;
+                totalDifference += Math.abs(count1 - count2);
+            }
+            
+            // If exactly one letter is different, total difference should be 2
+            // (one letter removed from word1, one letter added to word2)
+            return totalDifference === 2;
         }
 
         function animateSuccess() {
