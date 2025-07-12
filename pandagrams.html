@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PandaGrams</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #2d3436 0%, #636e72 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: #333;
+            position: relative;
+        }
+
+        .game-container {
+            background: white;
+            border-radius: 25px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+            border: 3px solid #2d3436;
+            position: relative;
+            z-index: 2;
+        }
+
+        .game-container::before {
+            content: '🐼';
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 2em;
+            background: white;
+            padding: 0 10px;
+            border-radius: 50%;
+            border: 3px solid #2d3436;
+        }
+
+        h1 {
+            color: #2d3436;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            position: relative;
+        }
+
+        h1::before {
+            content: '🐾';
+            position: absolute;
+            left: -40px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.8em;
+        }
+
+        h1::after {
+            content: '🐾';
+            position: absolute;
+            right: -40px;
+            top: 50%;
+            transform: translateY(-50%) scaleX(-1);
+            font-size: 0.8em;
+        }
+
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            font-size: 1.2em;
+        }
+
+        .score {
+            color: #00b894;
+            font-weight: bold;
+        }
+
+        .score::before {
+            content: '🎋 ';
+            font-size: 0.8em;
+        }
+
+        .timer {
+            color: #e17055;
+            font-weight: bold;
+        }
+
+        .timer::before {
+            content: '⏰ ';
+            font-size: 0.8em;
+        }
+
+        .timer.warning {
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .current-word {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2d3436;
+            margin-bottom: 20px;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            background: linear-gradient(45deg, #ddd, #f8f9fa);
+            padding: 15px;
+            border-radius: 15px;
+            border: 2px solid #2d3436;
+            position: relative;
+        }
+
+
+        .word-transition {
+            animation: slideUp 0.6s ease-out;
+        }
+
+        @keyframes slideUp {
+            0% {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+            100% {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .input-container {
+            margin-bottom: 30px;
+        }
+
+        .word-input {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .letter-box {
+            width: 50px;
+            height: 50px;
+            border: 3px solid #2d3436;
+            border-radius: 12px;
+            font-size: 1.5em;
+            text-align: center;
+            text-transform: uppercase;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .letter-box:focus {
+            outline: none;
+            border-color: #00b894;
+            box-shadow: 0 0 15px rgba(0, 184, 148, 0.5);
+            background: #f8f9fa;
+        }
+
+        .letter-box.correct {
+            background-color: #00b894;
+            color: white;
+            animation: bounce 0.5s ease;
+            border-color: #00a085;
+        }
+
+        .letter-box.error {
+            background-color: #e17055;
+            color: white;
+            animation: shake 0.5s ease;
+            border-color: #d63031;
+        }
+
+        @keyframes bounce {
+            0%, 20%, 60%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-10px); }
+            80% { transform: translateY(-5px); }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        .submit-btn {
+            background: linear-gradient(45deg, #2d3436, #636e72);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .submit-btn::before {
+            content: '🐾';
+            margin-right: 8px;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(45, 52, 54, 0.4);
+            background: linear-gradient(45deg, #636e72, #2d3436);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .message {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 10px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .message.success {
+            background-color: #d1f2eb;
+            color: #00522b;
+            border: 2px solid #00b894;
+            position: relative;
+        }
+
+        .message.success::before {
+            content: '🐼✨';
+            margin-right: 8px;
+        }
+
+        .message.error {
+            background-color: #ffeaa7;
+            color: #8b4513;
+            border: 2px solid #e17055;
+            position: relative;
+        }
+
+        .message.error::before {
+            content: '🐼💭';
+            margin-right: 8px;
+        }
+
+        .message.info {
+            background-color: #f8f9fa;
+            color: #2d3436;
+            border: 2px solid #636e72;
+            position: relative;
+        }
+
+        .message.info::before {
+            content: '🐼📚';
+            margin-right: 8px;
+        }
+
+        .game-over {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(45, 52, 54, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .game-over-content {
+            background: white;
+            padding: 40px;
+            border-radius: 25px;
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+            border: 3px solid #2d3436;
+            position: relative;
+        }
+
+        .game-over-content::before {
+            content: '😴';
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 2em;
+            background: white;
+            padding: 0 15px;
+            border-radius: 50px;
+            border: 3px solid #2d3436;
+        }
+
+        .game-over h2 {
+            color: #e17055;
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+
+        .final-score {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            color: #2d3436;
+        }
+
+        .final-score::before {
+            content: '🎋 ';
+        }
+
+        .restart-btn {
+            background: linear-gradient(45deg, #00b894, #00a085);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .restart-btn::before {
+            content: '🐼🔄 ';
+        }
+
+        .restart-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 184, 148, 0.4);
+            background: linear-gradient(45deg, #00a085, #00b894);
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>PandaGrams</h1>
+        
+        <div class="game-info">
+            <div class="score">Score: <span id="score">0</span></div>
+            <div class="timer" id="timer">Time: 30s</div>
+        </div>
+
+        <div class="current-word" id="currentWord">HOUSE</div>
+
+        <div class="input-container">
+            <div class="word-input" id="wordInput">
+                <input type="text" class="letter-box" maxlength="1" id="letter0">
+                <input type="text" class="letter-box" maxlength="1" id="letter1">
+                <input type="text" class="letter-box" maxlength="1" id="letter2">
+                <input type="text" class="letter-box" maxlength="1" id="letter3">
+                <input type="text" class="letter-box" maxlength="1" id="letter4">
+            </div>
+            <button class="submit-btn" id="submitBtn" onclick="checkAnswer()">Submit</button>
+        </div>
+
+        <div class="message hidden" id="message"></div>
+    </div>
+
+    <div class="game-over hidden" id="gameOver">
+        <div class="game-over-content">
+            <h2>Game Over!</h2>
+            <div class="final-score">Final Score: <span id="finalScore">0</span></div>
+            <button class="restart-btn" onclick="restartGame()">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        let dictionary = [];
+        let currentWord = '';
+        let score = 0;
+        let timeLeft = 30;
+        let gameTimer;
+        let gameActive = true;
+        let dictionaryLoaded = false;
+
+        // Load dictionary from external file
+        async function loadDictionary() {
+            try {
+                const response = await fetch('words.txt');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const text = await response.text();
+                dictionary = text.split('\n')
+                    .map(word => word.trim().toUpperCase())
+                    .filter(word => word.length === 5);
+                
+                console.log(`Loaded ${dictionary.length} words from dictionary`);
+                dictionaryLoaded = true;
+                return true;
+            } catch (error) {
+                console.error('Error loading dictionary:', error);
+                // Fallback to a small embedded dictionary if file loading fails
+                dictionary = [
+                    'HOUSE', 'MOUSE', 'HORSE', 'PHONE', 'STONE', 'PLANE', 'TABLE', 'CHAIR', 'BREAD', 'WATER',
+                    'LIGHT', 'NIGHT', 'RIGHT', 'FIGHT', 'SIGHT', 'MIGHT', 'TIGHT', 'WORLD', 'WORDS', 'WORKS',
+                    'WORSE', 'WOMAN', 'WOMEN', 'WOULD', 'WRITE', 'WRONG', 'WROTE', 'YEARS', 'YOUNG', 'YOURS',
+                    'ABOUT', 'ABOVE', 'ABUSE', 'ACTOR', 'ACUTE', 'ADMIT', 'ADOPT', 'ADULT', 'AFTER', 'AGAIN',
+                    'AGENT', 'AGREE', 'AHEAD', 'ALARM', 'ALBUM', 'ALERT', 'ALIEN', 'ALIGN', 'ALIKE', 'ALIVE',
+                    'ALLOW', 'ALONE', 'ALONG', 'ALTER', 'ANGRY', 'APART', 'APPLE', 'APPLY', 'ARENA', 'ARGUE',
+                    'ARISE', 'ARMED', 'ARMOR', 'ARRAY', 'ASIDE', 'ASSET', 'AVOID', 'AWAKE', 'AWARD', 'AWARE',
+                    'BADLY', 'BAKER', 'BASES', 'BASIC', 'BEACH', 'BEGAN', 'BEGIN', 'BEING', 'BELOW', 'BENCH',
+                    'BILLY', 'BIRTH', 'BLACK', 'BLAME', 'BLANK', 'BLIND', 'BLOCK', 'BLOOD', 'BOARD', 'BOOST',
+                    'BOOTH', 'BOUND', 'BRAIN', 'BRAND', 'BRASS', 'BRAVE', 'BREAD', 'BREAK', 'BREED', 'BRIEF'
+                ];
+                console.log('Using fallback dictionary with', dictionary.length, 'words');
+                dictionaryLoaded = true;
+                return false;
+            }
+        }
+
+        async function initGame() {
+            // Wait for dictionary to load if it hasn't already
+            if (!dictionaryLoaded) {
+                showMessage('Loading dictionary...', 'info');
+                await loadDictionary();
+                hideMessage();
+            }
+
+            if (dictionary.length === 0) {
+                showMessage('Error: No dictionary loaded!', 'error');
+                return;
+            }
+
+            currentWord = dictionary[Math.floor(Math.random() * dictionary.length)];
+            document.getElementById('currentWord').textContent = currentWord;
+            clearInputs();
+            resetTimer();
+            setupInputHandlers();
+            document.getElementById('letter0').focus();
+        }
+
+        function clearInputs() {
+            for (let i = 0; i < 5; i++) {
+                const input = document.getElementById(`letter${i}`);
+                input.value = '';
+                input.className = 'letter-box';
+            }
+        }
+
+        function setupInputHandlers() {
+            for (let i = 0; i < 5; i++) {
+                const input = document.getElementById(`letter${i}`);
+                input.addEventListener('input', function(e) {
+                    if (e.target.value.length === 1) {
+                        if (i < 4) {
+                            document.getElementById(`letter${i + 1}`).focus();
+                        }
+                    }
+                });
+                
+                input.addEventListener('keydown', function(e) {
+                    if (e.key === 'Backspace' && e.target.value === '' && i > 0) {
+                        document.getElementById(`letter${i - 1}`).focus();
+                    }
+                    if (e.key === 'Enter') {
+                        checkAnswer();
+                    }
+                });
+            }
+        }
+
+        function resetTimer() {
+            clearInterval(gameTimer);
+            timeLeft = 30;
+            updateTimerDisplay();
+            startTimer();
+        }
+
+        function startTimer() {
+            gameTimer = setInterval(() => {
+                timeLeft--;
+                updateTimerDisplay();
+                
+                if (timeLeft <= 10) {
+                    document.getElementById('timer').classList.add('warning');
+                }
+                
+                if (timeLeft <= 0) {
+                    gameOver();
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay() {
+            document.getElementById('timer').textContent = `Time: ${timeLeft}s`;
+        }
+
+        function checkAnswer() {
+            if (!gameActive) return;
+
+            const userWord = getUserWord();
+            
+            if (userWord.length !== 5) {
+                showMessage('Please enter a 5-letter word!', 'error');
+                return;
+            }
+
+            if (!isValidWord(userWord)) {
+                showMessage('Not a valid word!', 'error');
+                animateError();
+                return;
+            }
+
+            if (!isOneLetterDifferent(currentWord, userWord)) {
+                showMessage('Word must differ by exactly one letter!', 'error');
+                animateError();
+                return;
+            }
+
+            // Correct answer!
+            score++;
+            document.getElementById('score').textContent = score;
+            showMessage('Correct! Well done!', 'success');
+            animateSuccess();
+            
+            setTimeout(() => {
+                currentWord = userWord;
+                document.getElementById('currentWord').textContent = currentWord;
+                document.getElementById('currentWord').classList.add('word-transition');
+                setTimeout(() => {
+                    document.getElementById('currentWord').classList.remove('word-transition');
+                }, 600);
+                
+                clearInputs();
+                resetTimer();
+                hideMessage();
+                document.getElementById('letter0').focus();
+            }, 1000);
+        }
+
+        function getUserWord() {
+            let word = '';
+            for (let i = 0; i < 5; i++) {
+                word += document.getElementById(`letter${i}`).value.toUpperCase();
+            }
+            return word;
+        }
+
+        function isValidWord(word) {
+            return dictionary.includes(word);
+        }
+
+        function isOneLetterDifferent(word1, word2) {
+            if (word1.length !== word2.length) return false;
+            
+            let differences = 0;
+            for (let i = 0; i < word1.length; i++) {
+                if (word1[i] !== word2[i]) {
+                    differences++;
+                }
+            }
+            return differences === 1;
+        }
+
+        function animateSuccess() {
+            for (let i = 0; i < 5; i++) {
+                document.getElementById(`letter${i}`).classList.add('correct');
+            }
+            setTimeout(() => {
+                for (let i = 0; i < 5; i++) {
+                    document.getElementById(`letter${i}`).classList.remove('correct');
+                }
+            }, 1000);
+        }
+
+        function animateError() {
+            for (let i = 0; i < 5; i++) {
+                document.getElementById(`letter${i}`).classList.add('error');
+            }
+            setTimeout(() => {
+                for (let i = 0; i < 5; i++) {
+                    document.getElementById(`letter${i}`).classList.remove('error');
+                }
+            }, 500);
+        }
+
+        function showMessage(text, type) {
+            const message = document.getElementById('message');
+            message.textContent = text;
+            message.className = `message ${type}`;
+            message.classList.remove('hidden');
+        }
+
+        function hideMessage() {
+            document.getElementById('message').classList.add('hidden');
+        }
+
+        function gameOver() {
+            gameActive = false;
+            clearInterval(gameTimer);
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('gameOver').classList.remove('hidden');
+        }
+
+        function restartGame() {
+            gameActive = true;
+            score = 0;
+            document.getElementById('score').textContent = score;
+            document.getElementById('gameOver').classList.add('hidden');
+            document.getElementById('timer').classList.remove('warning');
+            hideMessage();
+            initGame();
+        }
+
+        // Initialize the game when page loads
+        window.onload = async function() {
+            await initGame();
+        };
+    </script>
+</body>
+</html>
