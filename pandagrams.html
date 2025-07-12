@@ -124,7 +124,6 @@
             position: relative;
         }
 
-
         .word-transition {
             animation: slideUp 0.6s ease-out;
         }
@@ -138,6 +137,47 @@
                 transform: translateY(0);
                 opacity: 1;
             }
+        }
+
+        .word-history {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+        .word-history h3 {
+            color: #2d3436;
+            margin-bottom: 10px;
+            font-size: 1em;
+        }
+
+        .word-history h3::before {
+            content: '📜 ';
+        }
+
+        .history-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .history-word {
+            background: #636e72;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            font-weight: bold;
+            letter-spacing: 0.1em;
+        }
+
+        .history-word.starting {
+            background: #00b894;
         }
 
         .input-container {
@@ -362,6 +402,13 @@
 
         <div class="current-word" id="currentWord">HOUSE</div>
 
+        <div class="word-history" id="wordHistory">
+            <h3>Word History</h3>
+            <div class="history-list" id="historyList">
+                <span class="history-word starting">HOUSE</span>
+            </div>
+        </div>
+
         <div class="input-container">
             <div class="word-input" id="wordInput">
                 <input type="text" class="letter-box" maxlength="1" id="letter0">
@@ -392,6 +439,7 @@
         let gameTimer;
         let gameActive = true;
         let dictionaryLoaded = false;
+        let wordHistory = []; // Track used words
 
         // Load dictionary from external file
         async function loadDictionary() {
@@ -442,12 +490,32 @@
                 return;
             }
 
+            // Reset word history and start with a random word
+            wordHistory = [];
             currentWord = dictionary[Math.floor(Math.random() * dictionary.length)];
+            wordHistory.push(currentWord);
+            
             document.getElementById('currentWord').textContent = currentWord;
+            updateWordHistory();
             clearInputs();
             resetTimer();
             setupInputHandlers();
             document.getElementById('letter0').focus();
+        }
+
+        function updateWordHistory() {
+            const historyList = document.getElementById('historyList');
+            historyList.innerHTML = '';
+            
+            wordHistory.forEach((word, index) => {
+                const span = document.createElement('span');
+                span.className = 'history-word';
+                if (index === 0) {
+                    span.className += ' starting';
+                }
+                span.textContent = word;
+                historyList.appendChild(span);
+            });
         }
 
         function clearInputs() {
@@ -522,6 +590,13 @@
                 return;
             }
 
+            // Check if word was already used
+            if (wordHistory.includes(userWord)) {
+                showMessage('Word already used! Try a different word.', 'error');
+                animateError();
+                return;
+            }
+
             if (!isOneLetterDifferent(currentWord, userWord)) {
                 showMessage('Word must differ by exactly one letter!', 'error');
                 animateError();
@@ -534,6 +609,9 @@
             showMessage('Correct! Well done!', 'success');
             animateSuccess();
             
+            // Add word to history
+            wordHistory.push(userWord);
+            
             setTimeout(() => {
                 currentWord = userWord;
                 document.getElementById('currentWord').textContent = currentWord;
@@ -542,6 +620,7 @@
                     document.getElementById('currentWord').classList.remove('word-transition');
                 }, 600);
                 
+                updateWordHistory();
                 clearInputs();
                 resetTimer();
                 hideMessage();
@@ -616,6 +695,7 @@
         function restartGame() {
             gameActive = true;
             score = 0;
+            wordHistory = [];
             document.getElementById('score').textContent = score;
             document.getElementById('gameOver').classList.add('hidden');
             document.getElementById('timer').classList.remove('warning');
