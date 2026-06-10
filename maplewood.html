@@ -40,6 +40,18 @@
     color: #fff; background: rgba(20,30,20,0.65);
     padding: 2px 8px; border-radius: 4px 4px 0 0; display: none;
   }
+  #pipHandle {
+    position: absolute; width: 16px; height: 16px; display: none;
+    cursor: nwse-resize; border-radius: 4px 0 0 0;
+    background: rgba(255,255,250,0.85);
+    border: 1px solid rgba(20,30,20,0.5);
+    box-sizing: border-box;
+  }
+  #pipHandle::after {
+    content: ''; position: absolute; left: 3px; top: 3px;
+    width: 7px; height: 7px;
+    border-left: 2px solid #46604a; border-top: 2px solid #46604a;
+  }
 </style>
 </head>
 <body>
@@ -82,6 +94,7 @@
 </div>
 
 <div id="pipLabel">Camera view &mdash; drag: pan/tilt &middot; scroll: zoom</div>
+<div id="pipHandle" title="Drag to resize"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -113,11 +126,20 @@ let dragTarget = null, px = 0, py = 0, autoRotate = true;
 // Screen-space rect of the PiP inset (CSS pixels, top-left origin);
 // kept up to date by the render loop
 const pipRect = { x: 0, y: 0, w: 0, h: 0, enabled: false };
+let pipWidth = null; // null = automatic default; set by dragging the handle
 function inPip(e) {
   return pipRect.enabled &&
     e.clientX >= pipRect.x && e.clientX <= pipRect.x + pipRect.w &&
     e.clientY >= pipRect.y && e.clientY <= pipRect.y + pipRect.h;
 }
+
+const pipHandle = document.getElementById('pipHandle');
+pipHandle.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  dragTarget = 'pipresize';
+  autoRotate = false;
+  px = e.clientX; py = e.clientY;
+});
 
 function updateCamera() {
   orbit.phi = Math.max(0.15, Math.min(1.45, orbit.phi));
@@ -142,7 +164,15 @@ addEventListener('pointermove', e => {
   }
   const dx = e.clientX - px, dy = e.clientY - py;
   px = e.clientX; py = e.clientY;
-  if (dragTarget === 'pip') {
+  if (dragTarget === 'pipresize') {
+    // Inset is anchored bottom-right; the handle is its top-left
+    // corner. Follow whichever axis asks for the bigger size, and
+    // lock to 16:9.
+    const margin = 14;
+    const fromX = (innerWidth - margin) - e.clientX;
+    const fromY = ((innerHeight - margin) - e.clientY) * 16 / 9;
+    pipWidth = Math.max(180, Math.min(innerWidth * 0.75, Math.max(fromX, fromY)));
+  } else if (dragTarget === 'pip') {
     // Direct PTZ feel: drag right pans right, drag up tilts up
     simState.pan = Math.max(-180, Math.min(180, simState.pan + dx * 0.15));
     simState.tilt = Math.max(-60, Math.min(30, simState.tilt - dy * 0.12));
@@ -877,9 +907,11 @@ function animate() {
 
   // Picture-in-picture: the simulated camera's view
   if ($('pip').checked) {
-    const pw = Math.min(420, Math.floor(innerWidth * 0.32));
-    const ph = Math.floor(pw * 9 / 16);
     const margin = 14;
+    const defaultW = Math.min(420, Math.floor(innerWidth * 0.32));
+    const pw = Math.floor(Math.max(180, Math.min(innerWidth * 0.75,
+      pipWidth !== null ? pipWidth : defaultW)));
+    const ph = Math.floor(pw * 9 / 16);
     const x = innerWidth - pw - margin, y = margin; // bottom-right (GL y-up)
 
     // Hit-test rect for pointer events (CSS coords, top-left origin)
@@ -888,6 +920,11 @@ function animate() {
     pipRect.w = pw;
     pipRect.h = ph;
     pipRect.enabled = true;
+
+    // Park the resize handle on the inset's top-left corner
+    pipHandle.style.display = 'block';
+    pipHandle.style.left = (pipRect.x - 1) + 'px';
+    pipHandle.style.top = (pipRect.y - 1) + 'px';
 
     overlayObjects.forEach(o => o.visible = false);
     const fpWasVisible = footprint.visible;
@@ -912,6 +949,7 @@ function animate() {
   } else {
     pipRect.enabled = false;
     pipLabel.style.display = 'none';
+    pipHandle.style.display = 'none';
   }
 }
 animate();
