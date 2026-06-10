@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suburban Soccer Field — Camera Simulator</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; background: #87b5d6; }
+  #info {
+    position: absolute; top: 12px; left: 12px;
+    font-family: Georgia, 'Times New Roman', serif;
+    color: #1d3a24; background: rgba(255,255,250,0.82);
+    padding: 10px 14px; border-radius: 6px; font-size: 13px;
+    border-left: 3px solid #2f7d3c; line-height: 1.5;
+    user-select: none;
+  }
+  #info b { font-size: 15px; letter-spacing: 0.4px; }
+
+  #panel {
+    position: absolute; top: 12px; right: 12px; width: 240px;
+    font-family: Georgia, 'Times New Roman', serif;
+    color: #1d2a33; background: rgba(255,255,250,0.9);
+    padding: 12px 16px 14px; border-radius: 6px; font-size: 13px;
+    border-left: 3px solid #c0392b;
+    user-select: none;
+  }
+  #panel h2 { margin: 0 0 10px; font-size: 15px; letter-spacing: 0.4px; color: #7e2418; }
+  #panel label { display: block; margin: 9px 0 2px; }
+  #panel .val { float: right; font-variant-numeric: tabular-nums; color: #555; }
+  #panel input[type=range] { width: 100%; accent-color: #c0392b; }
+  #panel select {
+    width: 100%; font-family: inherit; font-size: 13px;
+    padding: 3px; border: 1px solid #bbb; border-radius: 4px; background: #fff;
+  }
+  #panel .check { margin-top: 10px; }
+  #panel .lensnote { font-size: 11px; color: #777; margin-top: 2px; line-height: 1.35; }
+
+  #pipLabel {
+    position: absolute; font-family: Georgia, serif; font-size: 12px;
+    color: #fff; background: rgba(20,30,20,0.65);
+    padding: 2px 8px; border-radius: 4px 4px 0 0; display: none;
+  }
+</style>
+</head>
+<body>
+<div id="info">
+  <b>Maplewood Park Pitch</b><br>
+  Drag to orbit &middot; scroll to zoom
+</div>
+
+<div id="panel">
+  <h2>Camera Simulator</h2>
+
+  <label>Tripod height <span class="val" id="vHeight">3.0 m</span></label>
+  <input type="range" id="height" min="1" max="10" step="0.1" value="3">
+
+  <label>Position along touchline <span class="val" id="vPos">0 m</span></label>
+  <input type="range" id="pos" min="-50" max="50" step="1" value="0">
+
+  <label>Lens (GoPro digital lens)</label>
+  <select id="lens">
+    <option value="121.6">SuperView (~122&deg; H)</option>
+    <option value="118" selected>Wide (~118&deg; H)</option>
+    <option value="86">Linear (~86&deg; H)</option>
+    <option value="64">Narrow (~64&deg; H)</option>
+  </select>
+  <div class="lensnote">Horizontal FOV approximated as rectilinear at 16:9.</div>
+
+  <label>Zoom <span class="val" id="vZoom">1.0&times;</span></label>
+  <input type="range" id="zoom" min="1" max="5" step="0.1" value="1">
+  <div class="lensnote">Effective FOV: <span id="vEffFov">118&deg;</span> H (GoPro digital zoom tops out near 2&times;)</div>
+
+  <label>Pan <span class="val" id="vPan">0&deg;</span></label>
+  <input type="range" id="pan" min="-180" max="180" step="1" value="0">
+
+  <label>Tilt <span class="val" id="vTilt">-8&deg;</span></label>
+  <input type="range" id="tilt" min="-60" max="30" step="1" value="-8">
+
+  <div class="check">
+    <label style="display:inline"><input type="checkbox" id="pip" checked> Show camera view</label>
+  </div>
+</div>
+
+<div id="pipLabel">Camera view &mdash; drag: pan/tilt &middot; scroll: zoom</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ---------------------------------------------------------------
+// Scene, camera, renderer
+// ---------------------------------------------------------------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9cc8e8);
+scene.fog = new THREE.Fog(0x9cc8e8, 180, 420);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 1000);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+// ---------------------------------------------------------------
+// Simple orbit controls (drag + scroll) — no external deps.
+// Drags that start inside the picture-in-picture view instead
+// drive the simulated camera: left/right = pan, up/down = tilt,
+// wheel = zoom (PTZ-style direct mapping).
+// ---------------------------------------------------------------
+const orbit = { theta: 0.7, phi: 1.05, radius: 130, target: new THREE.Vector3(0, 0, 0) };
+let dragTarget = null, px = 0, py = 0, autoRotate = true;
+
+// Screen-space rect of the PiP inset (CSS pixels, top-left origin);
+// kept up to date by the render loop
+const pipRect = { x: 0, y: 0, w: 0, h: 0, enabled: false };
+function inPip(e) {
+  return pipRect.enabled &&
+    e.clientX >= pipRect.x && e.clientX <= pipRect.x + pipRect.w &&
+    e.clientY >= pipRect.y && e.clientY <= pipRect.y + pipRect.h;
+}
+
+function updateCamera() {
+  orbit.phi = Math.max(0.15, Math.min(1.45, orbit.phi));
+  orbit.radius = Math.max(30, Math.min(280, orbit.radius));
+  camera.position.set(
+    orbit.target.x + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta),
+    orbit.target.y + orbit.radius * Math.cos(orbit.phi),
+    orbit.target.z + orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta)
+  );
+  camera.lookAt(orbit.target);
+}
+renderer.domElement.addEventListener('pointerdown', e => {
+  dragTarget = inPip(e) ? 'pip' : 'orbit';
+  autoRotate = false;
+  px = e.clientX; py = e.clientY;
+});
+addEventListener('pointerup', () => dragTarget = null);
+addEventListener('pointermove', e => {
+  if (dragTarget === null) {
+    renderer.domElement.style.cursor = inPip(e) ? 'move' : 'grab';
+    return;
+  }
+  const dx = e.clientX - px, dy = e.clientY - py;
+  px = e.clientX; py = e.clientY;
+  if (dragTarget === 'pip') {
+    // Direct PTZ feel: drag right pans right, drag up tilts up
+    simState.pan = Math.max(-180, Math.min(180, simState.pan + dx * 0.15));
+    simState.tilt = Math.max(-60, Math.min(30, simState.tilt - dy * 0.12));
+    syncSliders();
+    updateSim();
+  } else {
+    orbit.theta -= dx * 0.005;
+    orbit.phi   -= dy * 0.005;
+    updateCamera();
+  }
+});
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (inPip(e)) {
+    simState.zoom = Math.max(1, Math.min(5, simState.zoom * (1 - Math.sign(e.deltaY) * 0.08)));
+    syncSliders();
+    updateSim();
+  } else {
+    orbit.radius *= 1 + Math.sign(e.deltaY) * 0.08;
+    updateCamera();
+  }
+}, { passive: false });
+
+// ---------------------------------------------------------------
+// Lighting — late-afternoon suburban sun
+// ---------------------------------------------------------------
+scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x4a6b3a, 0.55));
+
+const sun = new THREE.DirectionalLight(0xfff2d8, 1.05);
+sun.position.set(80, 110, 50);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -120; sun.shadow.camera.right = 120;
+sun.shadow.camera.top = 120;   sun.shadow.camera.bottom = -120;
+sun.shadow.camera.far = 350;
+sun.shadow.bias = -0.0005;
+scene.add(sun);
+
+// ---------------------------------------------------------------
+// Ground + mown pitch stripes
+// ---------------------------------------------------------------
+const FIELD_L = 100, FIELD_W = 64;
+const LINE = 0.06;
+
+const park = new THREE.Mesh(
+  new THREE.CircleGeometry(260, 48),
+  new THREE.MeshLambertMaterial({ color: 0x5d8a45 })
+);
+park.rotation.x = -Math.PI / 2;
+park.receiveShadow = true;
+scene.add(park);
+
+const stripeCount = 10;
+const stripeW = FIELD_L / stripeCount;
+for (let i = 0; i < stripeCount; i++) {
+  const stripe = new THREE.Mesh(
+    new THREE.PlaneGeometry(stripeW, FIELD_W + 8),
+    new THREE.MeshLambertMaterial({ color: i % 2 ? 0x4f9a3e : 0x5cab49 })
+  );
+  stripe.rotation.x = -Math.PI / 2;
+  stripe.position.set(-FIELD_L / 2 + stripeW * (i + 0.5), 0.02, 0);
+  stripe.receiveShadow = true;
+  scene.add(stripe);
+}
+
+// ---------------------------------------------------------------
+// Field lines
+// ---------------------------------------------------------------
+const lineMat = new THREE.MeshBasicMaterial({ color: 0xf5f5f0 });
+function lineRect(w, d, x, z) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), lineMat);
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(x, LINE, z);
+  scene.add(m);
+  return m;
+}
+const LW = 0.35;
+
+lineRect(FIELD_L + LW, LW, 0,  FIELD_W / 2);
+lineRect(FIELD_L + LW, LW, 0, -FIELD_W / 2);
+lineRect(LW, FIELD_W,  FIELD_L / 2, 0);
+lineRect(LW, FIELD_W, -FIELD_L / 2, 0);
+lineRect(LW, FIELD_W, 0, 0);
+
+const circle = new THREE.Mesh(new THREE.RingGeometry(9.15 - LW, 9.15, 64), lineMat);
+circle.rotation.x = -Math.PI / 2;
+circle.position.y = LINE;
+scene.add(circle);
+const spot = new THREE.Mesh(new THREE.CircleGeometry(0.4, 16), lineMat);
+spot.rotation.x = -Math.PI / 2; spot.position.y = LINE;
+scene.add(spot);
+
+[-1, 1].forEach(side => {
+  const gx = side * FIELD_L / 2;
+  lineRect(LW, 40.3, gx - side * 16.5, 0);
+  lineRect(16.5, LW, gx - side * 8.25,  20.15);
+  lineRect(16.5, LW, gx - side * 8.25, -20.15);
+  lineRect(LW, 18.3, gx - side * 5.5, 0);
+  lineRect(5.5, LW, gx - side * 2.75,  9.15);
+  lineRect(5.5, LW, gx - side * 2.75, -9.15);
+  const ps = new THREE.Mesh(new THREE.CircleGeometry(0.35, 16), lineMat);
+  ps.rotation.x = -Math.PI / 2;
+  ps.position.set(gx - side * 11, LINE, 0);
+  scene.add(ps);
+  const arcStart = side > 0 ? Math.PI - 0.93 : -0.93;
+  const arc = new THREE.Mesh(new THREE.RingGeometry(9.15 - LW, 9.15, 32, 1, arcStart, 1.86), lineMat);
+  arc.rotation.x = -Math.PI / 2;
+  arc.position.set(gx - side * 11, LINE, 0);
+  scene.add(arc);
+});
+
+[[-1,-1],[-1,1],[1,-1],[1,1]].forEach(([sx, sz]) => {
+  let start;
+  if (sx > 0 && sz > 0) start = Math.PI;
+  else if (sx < 0 && sz > 0) start = -Math.PI / 2;
+  else if (sx < 0 && sz < 0) start = 0;
+  else start = Math.PI / 2;
+  const arc = new THREE.Mesh(new THREE.RingGeometry(1 - LW, 1, 12, 1, start, Math.PI / 2), lineMat);
+  arc.rotation.x = -Math.PI / 2;
+  arc.position.set(sx * FIELD_L / 2, LINE, sz * FIELD_W / 2);
+  scene.add(arc);
+});
+
+[[-1,-1],[-1,1],[1,-1],[1,1]].forEach(([sx, sz]) => {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.05, 1.6, 6),
+    new THREE.MeshLambertMaterial({ color: 0xffe14d })
+  );
+  pole.position.y = 0.8;
+  const flag = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.6, 0.4),
+    new THREE.MeshLambertMaterial({ color: 0xe04b2f, side: THREE.DoubleSide })
+  );
+  flag.position.set(0.3 * -sx, 1.4, 0);
+  g.add(pole, flag);
+  g.position.set(sx * FIELD_L / 2, 0, sz * FIELD_W / 2);
+  scene.add(g);
+});
+
+// ---------------------------------------------------------------
+// Goals
+// ---------------------------------------------------------------
+function makeGoal(side) {
+  // Built in local space with the goal mouth facing -x (toward the
+  // pitch for the +x goal) and the net extending to +x (behind the
+  // goal line). The -x goal is the same group rotated 180 degrees.
+  const g = new THREE.Group();
+  const postMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const r = 0.12, W = 7.32, H = 2.44, D = 2.2; // post radius, width, height, net depth
+
+  // Posts + crossbar sit ON the goal line (x = 0 locally)
+  const postGeo = new THREE.CylinderGeometry(r, r, H, 10);
+  const p1 = new THREE.Mesh(postGeo, postMat); p1.position.set(0, H / 2,  W / 2);
+  const p2 = new THREE.Mesh(postGeo, postMat); p2.position.set(0, H / 2, -W / 2);
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(r, r, W + 2 * r, 10), postMat);
+  bar.rotation.x = Math.PI / 2;
+  bar.position.set(0, H, 0);
+  [p1, p2, bar].forEach(m => { m.castShadow = true; g.add(m); });
+
+  // Back frame: ground bar across the rear + sloped stanchions from
+  // each post top down to the rear ground corners
+  const frameMat = new THREE.MeshLambertMaterial({ color: 0xdddddd });
+  const groundBar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.04, W, 6), frameMat
+  );
+  groundBar.rotation.x = Math.PI / 2;
+  groundBar.position.set(D, 0.05, 0);
+  g.add(groundBar);
+
+  const slopeLen = Math.sqrt(D * D + H * H);
+  const stanGeo = new THREE.CylinderGeometry(0.04, 0.04, slopeLen, 6);
+  [-W / 2, W / 2].forEach(z => {
+    const stan = new THREE.Mesh(stanGeo, frameMat);
+    // Cylinder axis is local +y; tilt it to run from (0,H) to (D,0)
+    stan.rotation.z = Math.atan2(D, H);
+    stan.position.set(D / 2, H / 2, z);
+    g.add(stan);
+  });
+
+  // Net: one sloped panel from the crossbar down to the rear ground
+  // bar (the classic park-goal tent), plus triangular side panels
+  const netMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.35,
+    side: THREE.DoubleSide, wireframe: true
+  });
+
+  const slopeGeo = new THREE.PlaneGeometry(W, slopeLen, 16, 7);
+  slopeGeo.rotateY(Math.PI / 2);          // width now spans z, height spans y
+  slopeGeo.rotateZ(Math.atan2(D, H));     // tilt: top stays forward, bottom kicks back
+  slopeGeo.translate(D / 2, H / 2, 0);    // top edge at (0, H), bottom at (D, 0)
+  const slopeNet = new THREE.Mesh(slopeGeo, netMat);
+  g.add(slopeNet);
+
+  // Side panels: right triangles (goal line, post height) -> rear ground
+  const triShape = new THREE.Shape();
+  triShape.moveTo(0, 0);
+  triShape.lineTo(0, H);
+  triShape.lineTo(D, 0);
+  triShape.lineTo(0, 0);
+  const triGeo = new THREE.ShapeGeometry(triShape);
+  [-W / 2, W / 2].forEach(z => {
+    const sn = new THREE.Mesh(triGeo, netMat);
+    sn.position.set(0, 0, z);
+    g.add(sn);
+  });
+
+  g.position.x = side * FIELD_L / 2;
+  if (side < 0) g.rotation.y = Math.PI; // mirror for the far goal
+  scene.add(g);
+}
+makeGoal(1);
+makeGoal(-1);
+
+// ---------------------------------------------------------------
+// Trees
+// ---------------------------------------------------------------
+function leafyTree(x, z, s) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35 * s, 0.5 * s, 3.4 * s, 7),
+    new THREE.MeshLambertMaterial({ color: 0x6b4a2f })
+  );
+  trunk.position.y = 1.7 * s;
+  trunk.castShadow = true;
+  g.add(trunk);
+  const greens = [0x3e7d33, 0x4a8f3c, 0x356b2c];
+  for (let i = 0; i < 4; i++) {
+    const blob = new THREE.Mesh(
+      new THREE.SphereGeometry((1.7 + Math.random() * 0.9) * s, 8, 7),
+      new THREE.MeshLambertMaterial({ color: greens[i % 3] })
+    );
+    blob.position.set(
+      (Math.random() - 0.5) * 1.8 * s,
+      (3.8 + Math.random() * 1.6) * s,
+      (Math.random() - 0.5) * 1.8 * s
+    );
+    blob.castShadow = true;
+    g.add(blob);
+  }
+  g.position.set(x, 0, z);
+  scene.add(g);
+  return g;
+}
+function pineTree(x, z, s) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.25 * s, 0.35 * s, 2.4 * s, 7),
+    new THREE.MeshLambertMaterial({ color: 0x5e4128 })
+  );
+  trunk.position.y = 1.2 * s;
+  trunk.castShadow = true;
+  g.add(trunk);
+  for (let i = 0; i < 3; i++) {
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry((2.3 - i * 0.55) * s, 2.6 * s, 9),
+      new THREE.MeshLambertMaterial({ color: 0x2d5e30 })
+    );
+    cone.position.y = (2.8 + i * 1.5) * s;
+    cone.castShadow = true;
+    g.add(cone);
+  }
+  g.position.set(x, 0, z);
+  scene.add(g);
+  return g;
+}
+
+const trees = [];
+const treeSpots = [
+  [-62, 42], [-45, 48], [-20, 52], [8, 50], [32, 47], [55, 44], [68, 30],
+  [-66, -38], [-40, -50], [-12, -52], [18, -49], [44, -46], [64, -36],
+  [-72, 8], [-70, -14], [73, 6], [71, -16], [30, 56], [-30, 57]
+];
+treeSpots.forEach(([x, z], i) => {
+  const s = 0.8 + Math.random() * 0.6;
+  trees.push(i % 3 === 2 ? pineTree(x, z, s) : leafyTree(x, z, s));
+});
+
+// ---------------------------------------------------------------
+// Spectators
+// ---------------------------------------------------------------
+const shirtColors = [0xc0392b, 0x2980b9, 0xe6b522, 0x7d3c98, 0x16a085, 0xd35400, 0x5d6d7e, 0xeb7aa6];
+const skinTones = [0xf1c6a0, 0xd9a06b, 0xa9744d, 0x7a4f31];
+const spectators = [];
+
+function person(x, z, facing, sitting) {
+  const g = new THREE.Group();
+  const shirt = shirtColors[Math.floor(Math.random() * shirtColors.length)];
+  const skin = skinTones[Math.floor(Math.random() * skinTones.length)];
+  const h = 0.9 + Math.random() * 0.25;
+
+  if (!sitting) {
+    const legs = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18 * h, 0.22 * h, 0.85 * h, 8),
+      new THREE.MeshLambertMaterial({ color: 0x34495e })
+    );
+    legs.position.y = 0.43 * h;
+    legs.castShadow = true;
+    g.add(legs);
+  }
+  const baseY = sitting ? 0.15 : 0.85 * h;
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22 * h, 0.28 * h, 0.75 * h, 8),
+    new THREE.MeshLambertMaterial({ color: shirt })
+  );
+  body.position.y = baseY + 0.37 * h;
+  body.castShadow = true;
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.21 * h, 10, 8),
+    new THREE.MeshLambertMaterial({ color: skin })
+  );
+  head.position.y = baseY + 0.95 * h;
+  head.castShadow = true;
+  g.add(body, head);
+
+  if (Math.random() < 0.4) {
+    const cap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22 * h, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshLambertMaterial({ color: shirtColors[Math.floor(Math.random() * shirtColors.length)] })
+    );
+    cap.position.y = baseY + 1.0 * h;
+    g.add(cap);
+  }
+
+  g.position.set(x, 0, z);
+  g.rotation.y = facing;
+  g.userData.bobOffset = Math.random() * Math.PI * 2;
+  scene.add(g);
+  spectators.push(g);
+}
+
+for (let i = 0; i < 9; i++) {
+  const x = -42 + i * 10 + (Math.random() - 0.5) * 4;
+  person(x, FIELD_W / 2 + 4 + Math.random() * 2.5, Math.PI, Math.random() < 0.3);
+}
+for (let i = 0; i < 8; i++) {
+  const x = -38 + i * 11 + (Math.random() - 0.5) * 4;
+  person(x, -FIELD_W / 2 - 4 - Math.random() * 2.5, 0, Math.random() < 0.3);
+}
+for (let i = 0; i < 3; i++) {
+  person(FIELD_L / 2 + 7 + Math.random() * 2, -8 + i * 8, -Math.PI / 2, false);
+}
+
+const blanket = new THREE.Mesh(
+  new THREE.PlaneGeometry(4, 3),
+  new THREE.MeshLambertMaterial({ color: 0xd96459 })
+);
+blanket.rotation.x = -Math.PI / 2;
+blanket.position.set(-20, 0.04, FIELD_W / 2 + 9);
+scene.add(blanket);
+person(-21, FIELD_W / 2 + 9, Math.PI, true);
+person(-19, FIELD_W / 2 + 9.5, Math.PI, true);
+
+function bench(x, z) {
+  const g = new THREE.Group();
+  const seat = new THREE.Mesh(
+    new THREE.BoxGeometry(5, 0.18, 0.8),
+    new THREE.MeshLambertMaterial({ color: 0x8a9aa5 })
+  );
+  seat.position.y = 0.7;
+  seat.castShadow = true;
+  const legGeo = new THREE.BoxGeometry(0.15, 0.7, 0.6);
+  const legMat = new THREE.MeshLambertMaterial({ color: 0x5d6d7e });
+  [-2.2, 2.2].forEach(dx => {
+    const leg = new THREE.Mesh(legGeo, legMat);
+    leg.position.set(dx, 0.35, 0);
+    g.add(leg);
+  });
+  g.add(seat);
+  g.position.set(x, 0, z);
+  scene.add(g);
+}
+bench(-12, FIELD_W / 2 + 3);
+bench(12, FIELD_W / 2 + 3);
+
+// Half the original size: oversized vs. a real ball (~0.11 m radius)
+// but much easier to spot in the scene
+const ball = new THREE.Mesh(
+  new THREE.SphereGeometry(0.225, 16, 12),
+  new THREE.MeshLambertMaterial({ color: 0xfafafa })
+);
+ball.position.set(0, 0.225, 0); // on the centre spot for kickoff
+ball.castShadow = true;
+scene.add(ball);
+
+// ---------------------------------------------------------------
+// Players — 11 v 11 lined up for kickoff
+// Reds (4-3-3) attack +x and take the kickoff; Blues (4-4-2)
+// defend +x, everyone outside the centre circle except the taker.
+// ---------------------------------------------------------------
+const players = [];
+
+function makePlayer(x, z, shirt, shorts, facing, isKeeper) {
+  const g = new THREE.Group();
+  const skin = skinTones[Math.floor(Math.random() * skinTones.length)];
+  const h = 1.0 + Math.random() * 0.12;
+  const kit = isKeeper ? 0x2bb673 : shirt; // keepers in green
+
+  const legs = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.17 * h, 0.21 * h, 0.85 * h, 8),
+    new THREE.MeshLambertMaterial({ color: shorts })
+  );
+  legs.position.y = 0.43 * h;
+  legs.castShadow = true;
+
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.21 * h, 0.26 * h, 0.75 * h, 8),
+    new THREE.MeshLambertMaterial({ color: kit })
+  );
+  body.position.y = 0.85 * h + 0.37 * h;
+  body.castShadow = true;
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.2 * h, 10, 8),
+    new THREE.MeshLambertMaterial({ color: skin })
+  );
+  head.position.y = 0.85 * h + 0.95 * h;
+  head.castShadow = true;
+
+  g.add(legs, body, head);
+  g.position.set(x, 0, z);
+  g.rotation.y = facing;
+  g.userData.bobOffset = Math.random() * Math.PI * 2;
+  scene.add(g);
+  players.push(g);
+  return g;
+}
+
+// Reds: 4-3-3, defending the -x goal, facing +x
+const RED = 0xc0392b, RED_SHORTS = 0xf2f2f2;
+const FACE_POS_X = Math.PI / 2; // model faces +x
+makePlayer(-46, 0, RED, RED_SHORTS, FACE_POS_X, true);          // GK
+[-24, -8, 8, 24].forEach(z => makePlayer(-35, z, RED, RED_SHORTS, FACE_POS_X)); // back four
+[[-20, -13], [-22, 0], [-20, 13]].forEach(([x, z]) =>
+  makePlayer(x, z, RED, RED_SHORTS, FACE_POS_X));               // midfield three
+makePlayer(-6, -20, RED, RED_SHORTS, FACE_POS_X);               // left winger
+makePlayer(-6,  20, RED, RED_SHORTS, FACE_POS_X);               // right winger
+makePlayer(-1.0, 0.8, RED, RED_SHORTS, FACE_POS_X);             // striker on the ball
+
+// Blues: 4-4-2, defending the +x goal, facing -x
+const BLUE = 0x2e5fa3, BLUE_SHORTS = 0x1d2a3a;
+const FACE_NEG_X = -Math.PI / 2;
+makePlayer(46, 0, BLUE, BLUE_SHORTS, FACE_NEG_X, true);         // GK
+[-24, -8, 8, 24].forEach(z => makePlayer(35, z, BLUE, BLUE_SHORTS, FACE_NEG_X)); // back four
+[[20, -22], [21, -7], [21, 7], [20, 22]].forEach(([x, z]) =>
+  makePlayer(x, z, BLUE, BLUE_SHORTS, FACE_NEG_X));             // midfield four
+makePlayer(9, -5, BLUE, BLUE_SHORTS, FACE_NEG_X);               // strikers, just
+makePlayer(9,  5, BLUE, BLUE_SHORTS, FACE_NEG_X);               // outside the circle
+
+// Referee in black, ready near the circle
+makePlayer(-4, 7, 0x1a1a1a, 0x1a1a1a, FACE_POS_X);
+
+// ---------------------------------------------------------------
+// Distant suburban houses
+// ---------------------------------------------------------------
+const houseColors = [0xd8cab8, 0xc9a98a, 0xb9c4cc, 0xd6b8b0];
+const roofMat = new THREE.MeshLambertMaterial({ color: 0x6e5448 });
+[[-95, 80], [-60, 92], [-15, 96], [35, 93], [75, 84], [100, 55], [-105, 30]].forEach(([x, z], i) => {
+  const g = new THREE.Group();
+  const w = 10 + Math.random() * 4, d = 8, hgt = 5 + Math.random() * 2;
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(w, hgt, d),
+    new THREE.MeshLambertMaterial({ color: houseColors[i % 4] })
+  );
+  box.position.y = hgt / 2;
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.72, 3.5, 4), roofMat);
+  roof.position.y = hgt + 1.75;
+  roof.rotation.y = Math.PI / 4;
+  g.add(box, roof);
+  g.position.set(x, 0, z * (Math.random() < 0.5 ? 1 : -1));
+  g.rotation.y = (Math.random() - 0.5) * 0.6;
+  scene.add(g);
+});
+
+// ===============================================================
+// CAMERA SIMULATOR
+// ===============================================================
+// Tripod sits just off the near touchline (+Z side). The mast
+// telescopes from 1 m to 10 m; the head pans and tilts; the lens
+// switches between GoPro digital-lens presets. A frustum overlay
+// shows coverage, and a picture-in-picture inset shows the actual
+// camera view.
+// ---------------------------------------------------------------
+const TRIPOD_Z = FIELD_W / 2 + 2.5;
+const ASPECT_169 = 16 / 9;
+
+const simState = {
+  height: 3,
+  posX: 0,
+  hFov: 118,
+  zoom: 1,   // focal-length multiplier applied to the lens preset
+  pan: 0,    // degrees, 0 = facing the pitch
+  tilt: -8   // degrees, negative = down
+};
+
+// --- Tripod model ---
+const tripodGroup = new THREE.Group();
+
+const tripodMat = new THREE.MeshLambertMaterial({ color: 0x2c3e50 });
+const legGeo = new THREE.CylinderGeometry(0.035, 0.05, 1.7, 6);
+for (let i = 0; i < 3; i++) {
+  const leg = new THREE.Mesh(legGeo, tripodMat);
+  const a = i * Math.PI * 2 / 3;
+  leg.position.set(Math.sin(a) * 0.42, 0.78, Math.cos(a) * 0.42);
+  leg.rotation.z = -Math.sin(a) * 0.5;
+  leg.rotation.x = Math.cos(a) * 0.5;
+  leg.castShadow = true;
+  tripodGroup.add(leg);
+}
+
+// Telescoping mast — scaled in Y to reach the set height
+const mast = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.045, 0.055, 1, 8),
+  new THREE.MeshLambertMaterial({ color: 0x95a5a6 })
+);
+mast.castShadow = true;
+tripodGroup.add(mast);
+
+// Pan/tilt head + camera body
+const panGroup = new THREE.Group();
+const tiltGroup = new THREE.Group();
+panGroup.add(tiltGroup);
+tripodGroup.add(panGroup);
+
+const headPlate = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.09, 0.11, 0.08, 10),
+  tripodMat
+);
+headPlate.position.y = -0.06;
+panGroup.add(headPlate);
+
+const camBody = new THREE.Mesh(
+  new THREE.BoxGeometry(0.16, 0.12, 0.22),
+  new THREE.MeshLambertMaterial({ color: 0x1b1b1b })
+);
+camBody.castShadow = true;
+tiltGroup.add(camBody);
+
+const camLens = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.045, 0.05, 0.06, 12),
+  new THREE.MeshLambertMaterial({ color: 0x111111 })
+);
+camLens.rotation.x = Math.PI / 2;
+camLens.position.set(0, 0.01, -0.13);
+tiltGroup.add(camLens);
+
+// Small record light
+const recDot = new THREE.Mesh(
+  new THREE.SphereGeometry(0.014, 8, 6),
+  new THREE.MeshBasicMaterial({ color: 0xff2d2d })
+);
+recDot.position.set(0.06, 0.07, -0.11);
+tiltGroup.add(recDot);
+
+scene.add(tripodGroup);
+
+// --- The simulated camera itself ---
+const FAR_VIS = 95; // how far the frustum overlay extends
+const simCam = new THREE.PerspectiveCamera(90, ASPECT_169, 0.4, 600);
+tiltGroup.add(simCam);
+simCam.position.set(0, 0.02, -0.1);
+
+// --- Frustum overlay: translucent volume + edge lines ---
+const frustumMat = new THREE.MeshBasicMaterial({
+  color: 0xffc845, transparent: true, opacity: 0.10,
+  side: THREE.DoubleSide, depthWrite: false
+});
+const frustumGeo = new THREE.BufferGeometry();
+frustumGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(18 * 3), 3));
+const frustumMesh = new THREE.Mesh(frustumGeo, frustumMat);
+frustumMesh.frustumCulled = false;
+scene.add(frustumMesh);
+
+const edgeMat = new THREE.LineBasicMaterial({ color: 0xffaa00 });
+const edgeGeo = new THREE.BufferGeometry();
+edgeGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(16 * 3), 3));
+const frustumEdges = new THREE.LineSegments(edgeGeo, edgeMat);
+frustumEdges.frustumCulled = false;
+scene.add(frustumEdges);
+
+// Ground footprint: where the frustum rays hit the grass
+const footMat = new THREE.MeshBasicMaterial({
+  color: 0xffaa00, transparent: true, opacity: 0.18,
+  side: THREE.DoubleSide, depthWrite: false
+});
+const footGeo = new THREE.BufferGeometry();
+footGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6 * 3), 3));
+const footprint = new THREE.Mesh(footGeo, footMat);
+footprint.frustumCulled = false;
+scene.add(footprint);
+
+const overlayObjects = [frustumMesh, frustumEdges, footprint];
+
+// --- Apply control state to the rig ---
+const _v = new THREE.Vector3();
+function updateSim() {
+  tripodGroup.position.set(simState.posX, 0, TRIPOD_Z);
+
+  // Mast stretches from ground to head height
+  mast.scale.y = simState.height;
+  mast.position.y = simState.height / 2;
+  panGroup.position.y = simState.height + 0.1;
+
+  panGroup.rotation.y = THREE.MathUtils.degToRad(simState.pan);
+  tiltGroup.rotation.x = THREE.MathUtils.degToRad(simState.tilt);
+
+  // Zoom multiplies focal length: narrow the horizontal FOV, then
+  // derive the vertical FOV for the 16:9 frame
+  const hRad = THREE.MathUtils.degToRad(simState.hFov);
+  const effHRad = 2 * Math.atan(Math.tan(hRad / 2) / simState.zoom);
+  simCam.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(effHRad / 2) / ASPECT_169));
+  simCam.aspect = ASPECT_169;
+  simCam.updateProjectionMatrix();
+  simCam.updateMatrixWorld(true);
+
+  const effSpan = document.getElementById('vEffFov');
+  if (effSpan) effSpan.textContent = THREE.MathUtils.radToDeg(effHRad).toFixed(0) + '\u00B0';
+
+  // Compute frustum corners in world space at the visualization
+  // far distance, by walking rays through the NDC corners.
+  const origin = simCam.getWorldPosition(new THREE.Vector3());
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([nx, ny]) => {
+    _v.set(nx, ny, 0.5).unproject(simCam);
+    const dir = _v.clone().sub(origin).normalize();
+    return origin.clone().add(dir.multiplyScalar(FAR_VIS));
+  });
+
+  // Volume: 4 side triangles (apex + edge) + far quad (2 tris)
+  const pos = frustumGeo.attributes.position.array;
+  let k = 0;
+  const put = p => { pos[k++] = p.x; pos[k++] = p.y; pos[k++] = p.z; };
+  for (let i = 0; i < 4; i++) {
+    put(origin); put(corners[i]); put(corners[(i + 1) % 4]);
+  }
+  put(corners[0]); put(corners[1]); put(corners[2]);
+  put(corners[0]); put(corners[2]); put(corners[3]);
+  frustumGeo.attributes.position.needsUpdate = true;
+
+  // Edges: apex to each corner + far-plane rectangle
+  const ep = edgeGeo.attributes.position.array;
+  k = 0;
+  const putE = p => { ep[k++] = p.x; ep[k++] = p.y; ep[k++] = p.z; };
+  for (let i = 0; i < 4; i++) { putE(origin); putE(corners[i]); }
+  for (let i = 0; i < 4; i++) { putE(corners[i]); putE(corners[(i + 1) % 4]); }
+  edgeGeo.attributes.position.needsUpdate = true;
+
+  // Ground footprint from the two bottom rays (if they hit the ground)
+  const fp = footGeo.attributes.position.array;
+  const hitGround = (target) => {
+    const dir = target.clone().sub(origin);
+    if (dir.y >= -0.001) return null; // pointing level/up
+    const t = -origin.y / dir.y;
+    if (t <= 0 || t > 1.6) return null; // beyond the visualized range
+    return origin.clone().add(dir.multiplyScalar(t)).setY(0.08);
+  };
+  const gA = hitGround(corners[0]); // bottom-left
+  const gB = hitGround(corners[1]); // bottom-right
+  // Far ground points: bottom rays extended, or far corners dropped
+  const gC = corners[1].y < 0 ? corners[1].clone().setY(0.08) : null;
+  const gD = corners[0].y < 0 ? corners[0].clone().setY(0.08) : null;
+  if (gA && gB) {
+    const farR = gC || corners[1].clone().setY(0.08);
+    const farL = gD || corners[0].clone().setY(0.08);
+    k = 0;
+    const putF = p => { fp[k++] = p.x; fp[k++] = p.y; fp[k++] = p.z; };
+    putF(gA); putF(gB); putF(farR);
+    putF(gA); putF(farR); putF(farL);
+    footprint.visible = true;
+    footGeo.attributes.position.needsUpdate = true;
+  } else {
+    footprint.visible = false;
+  }
+}
+
+// --- Wire up controls ---
+const $ = id => document.getElementById(id);
+function refreshLabels() {
+  $('vHeight').textContent = simState.height.toFixed(1) + ' m';
+  $('vPos').textContent = simState.posX + ' m';
+  $('vPan').textContent = Math.round(simState.pan) + '\u00B0';
+  $('vTilt').textContent = Math.round(simState.tilt) + '\u00B0';
+  $('vZoom').textContent = simState.zoom.toFixed(1) + '\u00D7';
+}
+// Push state back into the sliders when pan/tilt/zoom are driven
+// by dragging in the camera view
+function syncSliders() {
+  $('pan').value = simState.pan;
+  $('tilt').value = simState.tilt;
+  $('zoom').value = simState.zoom;
+  refreshLabels();
+}
+$('height').addEventListener('input', e => { simState.height = +e.target.value; refreshLabels(); updateSim(); });
+$('pos').addEventListener('input',    e => { simState.posX = +e.target.value; refreshLabels(); updateSim(); });
+$('pan').addEventListener('input',    e => { simState.pan = +e.target.value; refreshLabels(); updateSim(); });
+$('tilt').addEventListener('input',   e => { simState.tilt = +e.target.value; refreshLabels(); updateSim(); });
+$('zoom').addEventListener('input',   e => { simState.zoom = +e.target.value; refreshLabels(); updateSim(); });
+$('lens').addEventListener('change',  e => { simState.hFov = +e.target.value; updateSim(); });
+
+refreshLabels();
+updateSim();
+
+// ---------------------------------------------------------------
+// Animate + picture-in-picture render
+// ---------------------------------------------------------------
+const clock = new THREE.Clock();
+const pipLabel = $('pipLabel');
+updateCamera();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  if (autoRotate) {
+    orbit.theta += 0.0012;
+    updateCamera();
+  }
+
+  spectators.forEach(s => {
+    s.rotation.z = Math.sin(t * 1.4 + s.userData.bobOffset) * 0.03;
+  });
+  trees.forEach((tr, i) => {
+    tr.rotation.z = Math.sin(t * 0.7 + i) * 0.012;
+  });
+  players.forEach(p => {
+    p.rotation.z = Math.sin(t * 1.8 + p.userData.bobOffset) * 0.02;
+  });
+
+  // Main view
+  renderer.setViewport(0, 0, innerWidth, innerHeight);
+  renderer.setScissorTest(false);
+  renderer.render(scene, camera);
+
+  // Picture-in-picture: the simulated camera's view
+  if ($('pip').checked) {
+    const pw = Math.min(420, Math.floor(innerWidth * 0.32));
+    const ph = Math.floor(pw * 9 / 16);
+    const margin = 14;
+    const x = innerWidth - pw - margin, y = margin; // bottom-right (GL y-up)
+
+    // Hit-test rect for pointer events (CSS coords, top-left origin)
+    pipRect.x = x;
+    pipRect.y = innerHeight - margin - ph;
+    pipRect.w = pw;
+    pipRect.h = ph;
+    pipRect.enabled = true;
+
+    overlayObjects.forEach(o => o.visible = false);
+    const fpWasVisible = footprint.visible;
+    tripodGroup.visible = false; // don't show our own rig from inside
+
+    renderer.setScissorTest(true);
+    renderer.setViewport(x, y, pw, ph);
+    renderer.setScissor(x, y, pw, ph);
+    renderer.render(scene, simCam);
+    renderer.setScissorTest(false);
+
+    tripodGroup.visible = true;
+    frustumMesh.visible = true;
+    frustumEdges.visible = true;
+    footprint.visible = fpWasVisible;
+
+    pipLabel.style.display = 'block';
+    pipLabel.style.right = margin + 'px';
+    pipLabel.style.bottom = (margin + ph) + 'px';
+    pipLabel.style.left = 'auto';
+    pipLabel.style.top = 'auto';
+  } else {
+    pipRect.enabled = false;
+    pipLabel.style.display = 'none';
+  }
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
