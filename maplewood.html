@@ -76,7 +76,7 @@
     <option value="86">Linear (~86&deg; H)</option>
     <option value="64">Narrow (~64&deg; H)</option>
   </select>
-  <div class="lensnote">Horizontal FOV approximated as rectilinear at 16:9.</div>
+  <div class="lensnote">SuperView &amp; Wide render with fisheye distortion in the camera view; Linear &amp; Narrow are rectilinear.</div>
 
   <label>Zoom <span class="val" id="vZoom">1.0&times;</span></label>
   <input type="range" id="zoom" min="1" max="5" step="0.1" value="1">
@@ -663,10 +663,16 @@ const simState = {
   height: 3,
   posX: 0,
   hFov: 118,
-  zoom: 1,   // focal-length multiplier applied to the lens preset
-  pan: 0,    // degrees, 0 = facing the pitch
-  tilt: -8   // degrees, negative = down
+  zoom: 1,    // focal-length multiplier applied to the lens preset
+  pan: 0,     // degrees, 0 = facing the pitch
+  tilt: -8,   // degrees, negative = down
+  distK: 0.38 // barrel distortion strength for the current lens
 };
+
+// How much fisheye each GoPro digital lens applies. SuperView and
+// Wide are true fisheye projections; Linear and Narrow are
+// software-rectified, so they stay rectilinear.
+const LENS_DISTORTION = { 121.6: 0.55, 118: 0.38, 86: 0, 64: 0 };
 
 // --- Tripod model ---
 const tripodGroup = new THREE.Group();
@@ -734,6 +740,52 @@ const FAR_VIS = 95; // how far the frustum overlay extends
 const simCam = new THREE.PerspectiveCamera(90, ASPECT_169, 0.4, 600);
 tiltGroup.add(simCam);
 simCam.position.set(0, 0.02, -0.1);
+
+// --- Fisheye post-process for the camera view ---
+// The scene is rendered rectilinear into an offscreen target, then
+// drawn to the inset through a barrel-distortion shader. The warp
+// is normalized so the frame corners stay fixed: the centre is
+// magnified and the edges compress, which is how a fisheye lens
+// differs from a rectilinear one covering the same FOV.
+const pipRT = new THREE.WebGLRenderTarget(1024, 576, {
+  minFilter: THREE.LinearFilter,
+  magFilter: THREE.LinearFilter
+});
+const distMat = new THREE.ShaderMaterial({
+  uniforms: {
+    tDiffuse: { value: null },
+    k1: { value: 0 },
+    aspect: { value: ASPECT_169 }
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = vec4(position.xy, 0.0, 1.0);
+    }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float k1;
+    uniform float aspect;
+    varying vec2 vUv;
+    void main() {
+      vec2 p = vUv * 2.0 - 1.0;
+      p.x *= aspect;
+      float rDiag = length(vec2(aspect, 1.0));
+      float n = length(p) / rDiag;            // 0 at centre, 1 at corners
+      float k2 = 0.15 * k1;
+      // Radial remap, normalized so n = 1 maps to itself
+      float scale = (1.0 + k1 * n * n + k2 * n * n * n * n) / (1.0 + k1 + k2);
+      vec2 q = p * scale;
+      q.x /= aspect;
+      gl_FragColor = texture2D(tDiffuse, q * 0.5 + 0.5);
+    }`,
+  depthTest: false,
+  depthWrite: false
+});
+const distScene = new THREE.Scene();
+const distCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+distScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), distMat));
 
 // --- Frustum overlay: translucent volume + edge lines ---
 const frustumMat = new THREE.MeshBasicMaterial({
@@ -869,7 +921,11 @@ $('pos').addEventListener('input',    e => { simState.posX = +e.target.value; re
 $('pan').addEventListener('input',    e => { simState.pan = +e.target.value; refreshLabels(); updateSim(); });
 $('tilt').addEventListener('input',   e => { simState.tilt = +e.target.value; refreshLabels(); updateSim(); });
 $('zoom').addEventListener('input',   e => { simState.zoom = +e.target.value; refreshLabels(); updateSim(); });
-$('lens').addEventListener('change',  e => { simState.hFov = +e.target.value; updateSim(); });
+$('lens').addEventListener('change',  e => {
+  simState.hFov = +e.target.value;
+  simState.distK = LENS_DISTORTION[simState.hFov] || 0;
+  updateSim();
+});
 
 refreshLabels();
 updateSim();
@@ -926,20 +982,36 @@ function animate() {
     pipHandle.style.left = (pipRect.x - 1) + 'px';
     pipHandle.style.top = (pipRect.y - 1) + 'px';
 
+    // Render the camera's rectilinear view offscreen, then draw it
+    // into the inset through the fisheye shader
+    const ratio = renderer.getPixelRatio();
+    const rtW = Math.floor(pw * ratio), rtH = Math.floor(ph * ratio);
+    if (pipRT.width !== rtW || pipRT.height !== rtH) pipRT.setSize(rtW, rtH);
+
     overlayObjects.forEach(o => o.visible = false);
     const fpWasVisible = footprint.visible;
     tripodGroup.visible = false; // don't show our own rig from inside
 
-    renderer.setScissorTest(true);
-    renderer.setViewport(x, y, pw, ph);
-    renderer.setScissor(x, y, pw, ph);
-    renderer.render(scene, simCam);
     renderer.setScissorTest(false);
+    renderer.setRenderTarget(pipRT);
+    renderer.render(scene, simCam);
+    renderer.setRenderTarget(null);
 
     tripodGroup.visible = true;
     frustumMesh.visible = true;
     frustumEdges.visible = true;
     footprint.visible = fpWasVisible;
+
+    // Digital zoom crops the centre of the fisheye image, where
+    // there's less distortion — so the warp eases off as you punch in
+    distMat.uniforms.tDiffuse.value = pipRT.texture;
+    distMat.uniforms.k1.value = simState.distK / (simState.zoom * simState.zoom);
+
+    renderer.setScissorTest(true);
+    renderer.setViewport(x, y, pw, ph);
+    renderer.setScissor(x, y, pw, ph);
+    renderer.render(distScene, distCam);
+    renderer.setScissorTest(false);
 
     pipLabel.style.display = 'block';
     pipLabel.style.right = margin + 'px';
